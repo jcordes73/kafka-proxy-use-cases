@@ -1,0 +1,17 @@
+# deploy/console/03-console-metrics.yaml — Step 15 (openshift-setup.md)
+# Scrape the console's own Prometheus metrics. The console app serves them at
+# /metrics on the web port (NOT /q/metrics — the streamshub console operator's
+# own ServiceMonitor uses /q/metrics and an empty selector; it was patched to
+# select only the operator service).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-console
+  namespace: kafka-console
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-console
+  endpoints:
+    - port: http
+      path: /metrics

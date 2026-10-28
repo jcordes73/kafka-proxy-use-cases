@@ -1,0 +1,17 @@
+# deploy/custom-filter/02-kafkaprotocolfilter.yaml — Step 16.6 (openshift-setup.md)
+# Configures the sample project's produce-request filter (find-and-replace on
+# the produce path). spec.type must name the FilterFactory that the plugin JAR
+# exposes via ServiceLoader. Wire it to the virtual cluster with:
+#
+#   oc -n kafka-proxy patch virtualkafkacluster my-cluster --type=merge \
+#     -p '{"spec":{"filterRefs":[{"name":"sample-produce-request-filter"}]}}'
+kind: KafkaProtocolFilter
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: sample-produce-request-filter
+spec:
+  type: SampleProduceRequestFilterFactory
+  configTemplate:
+    findValue: foo
+    replacementValue: bar

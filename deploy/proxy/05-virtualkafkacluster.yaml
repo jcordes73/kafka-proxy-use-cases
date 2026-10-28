@@ -1,0 +1,17 @@
+# deploy/proxy/05-virtualkafkacluster.yaml — Steps 7–8 (openshift-setup.md)
+# Wires proxy + ingress + backend together. filterRefs omitted: traffic passes
+# through unchanged — validate basic connectivity first, then add filters one
+# at a time (see the use case catalog in README.md).
+kind: VirtualKafkaCluster
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  name: my-cluster
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: my-cluster
+  ingresses:
+    - ingressRef:
+        name: cluster-ip

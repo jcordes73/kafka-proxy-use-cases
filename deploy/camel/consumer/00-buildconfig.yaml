@@ -1,0 +1,46 @@
+# deploy/camel/consumer/00-buildconfig.yaml — Step 14.4 (openshift-setup.md)
+# In-cluster image build alternative to `podman build && podman push`:
+# binary (from-dir) build with a Docker strategy. Start it with:
+#
+#   mvn -B package -DskipTests
+#   oc apply -f 00-buildconfig.yaml -n kafka-consumer
+#   oc start-build camel-kafka-consumer --from-dir=. -n kafka-consumer --follow
+#
+# The payload must contain this Dockerfile plus target/quarkus-app/.
+# lookupPolicy.local lets the Deployment reference the image by
+# camel-kafka-consumer:1.0.0 without the registry prefix.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-consumer
+  annotations:
+    openshift.io/description: "Camel Kafka consumer (DMZ client)"
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: camel-kafka-consumer
+  namespace: kafka-consumer
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: camel-kafka-consumer
+  namespace: kafka-consumer
+  labels:
+    app: camel-kafka-consumer
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: camel-kafka-consumer:1.0.0
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  source:
+    type: Binary
+  triggers: []

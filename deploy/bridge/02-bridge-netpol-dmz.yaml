@@ -1,0 +1,49 @@
+# deploy/bridge/02-bridge-netpol-dmz.yaml — Step 12.5 (openshift-setup.md)
+# DMZ for the bridge's unauthenticated HTTP API: default deny + same-namespace
+# + your API layer/gateway namespace, only on the HTTP port.
+# NOTE: ingress-only — the bridge can still connect to the proxy's bootstrap.
+---
+# The stand-in API-layer namespace used by the Step 12 verification below
+# (replace with your real API namespace in production).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: api-gateway
+  annotations:
+    openshift.io/description: "Stand-in API layer namespace for DMZ verification"
+---
+# 1. Default deny: no ingress to the bridge pods
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-bridge-deny-ingress
+  namespace: kafka-http-bridge
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/kind: KafkaBridge
+      strimzi.io/cluster: my-bridge
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# 2. Allowed clients: same namespace + your API layer, only on the HTTP port
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-bridge-allow-clients
+  namespace: kafka-http-bridge
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/kind: KafkaBridge
+      strimzi.io/cluster: my-bridge
+  ingress:
+    - from:
+        - podSelector: {}   # any pod in kafka-http-bridge (e.g., the test pods in 12.3)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: api-gateway   # your API layer / gateway namespace
+      ports:
+        - port: 8080
+          protocol: TCP

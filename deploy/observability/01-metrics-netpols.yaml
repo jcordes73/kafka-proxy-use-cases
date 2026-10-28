@@ -1,0 +1,42 @@
+# deploy/observability/01-metrics-netpols.yaml — Step 15.2 (openshift-setup.md)
+# Additive policies letting the user-workload monitoring namespace scrape the
+# DMZ-locked components, only on their metrics ports.
+---
+# Kafka namespace: openshift-user-workload-monitoring may scrape 9404 (metricsConfig)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-cluster-allow-monitoring
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: my-cluster
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-user-workload-monitoring
+      ports:
+        - port: 9404
+          protocol: TCP
+---
+# Bridge namespace: openshift-user-workload-monitoring may scrape 8080 (REST API + /metrics)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-bridge-allow-monitoring
+  namespace: kafka-http-bridge
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/kind: KafkaBridge
+      strimzi.io/cluster: my-bridge
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-user-workload-monitoring
+      ports:
+        - port: 8080
+          protocol: TCP

@@ -1,0 +1,56 @@
+# deploy/kafka/03-kafka-netpol-dmz.yaml — Step 0.4 (openshift-setup.md)
+# DMZ lockdown for the Kafka cluster: default-deny + same-namespace +
+# proxy-namespace-only on the client-facing listener ports (9092/9093).
+# NOTE: In Strimzi 0.51 the listener ports are additionally governed by the
+# operator-generated my-cluster-network-policy-kafka — hence the per-listener
+# networkPolicyPeers in 02-kafka.yaml must match this intent.
+---
+# 1. Default deny: no ingress to Kafka pods at all
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-cluster-deny-ingress
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: my-cluster
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# 2. Allow all traffic from within the kafka namespace
+#    (control plane 9091, broker replication, Cluster/Entity Operator)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-cluster-allow-same-namespace
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: my-cluster
+  ingress:
+    - from:
+        - podSelector: {}   # any pod in the kafka namespace
+---
+# 3. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: my-cluster-allow-proxy
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: my-cluster
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-proxy
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 9093
+          protocol: TCP

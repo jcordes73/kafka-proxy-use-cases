@@ -1,0 +1,36 @@
+# deploy/observability/05-kafka-stack-alerts.yaml — Step 15.9 (openshift-setup.md)
+# Minimal alert rules picked up by the user-workload Prometheus. Rules are
+# component-specific; Prometheus evaluates them against metrics from any
+# namespace, so a single rule file per concern is fine (broker rules could
+# equally live in the kafka namespace).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kafka-stack-alerts
+  namespace: kafka-proxy
+  labels:
+    # required by the user-workload Prometheus ruleSelector (OCP default)
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+    - name: kafka.stack.rules
+      rules:
+        # Proxy availability — the Deployment is named after the KafkaProxy
+        # resource (here: simple); adapt to your proxy deployment name
+        - alert: ProxyDown
+          expr: |
+            up{namespace="kafka-proxy", pod=~"simple-.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kafka proxy has no responding scrape targets"
+        # Broker health — evaluated against the kafka-namespace metrics
+        - alert: KafkaUnderReplicatedPartitions
+          expr: |
+            kafka_server_replicamanager_underreplicatedpartitions > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Under-replicated partitions on the Kafka cluster"

@@ -1,0 +1,13 @@
+# deploy/proxy/03-kafkaproxyingress.yaml — Step 5 (openshift-setup.md)
+# clusterIP ingress: on-cluster clients reach the virtual cluster over a
+# ClusterIP Service (plain TCP here; use protocol: TLS + a certificate for TLS).
+kind: KafkaProxyIngress
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: cluster-ip
+spec:
+  proxyRef:
+    name: simple
+  clusterIP:
+    protocol: TCP

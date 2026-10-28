@@ -1,0 +1,30 @@
+# deploy/bridge/01-kafka-bridge.yaml — Step 12.2 (openshift-setup.md)
+# The bridge is a plain Kafka client of the VIRTUAL cluster: bootstrapServers
+# points at the proxy's clusterIP bootstrap, so HTTP traffic flows through the
+# proxy and the DMZ stays intact.
+# Bootstrap port is operator-allocated (guide Step 11).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-http-bridge
+  annotations:
+    openshift.io/description: "Kafka HTTP Bridge (DMZ client)"
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaBridge
+metadata:
+  name: my-bridge
+  namespace: kafka-http-bridge
+spec:
+  replicas: 1
+  # Kafka bootstrap servers (required) — the PROXY's clusterIP bootstrap, not the Kafka cluster's
+  bootstrapServers: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+  http:
+    port: 8080
+  # If the proxy's clusterIP ingress uses TLS, trust the CA that signed the proxy's
+  # server certificate (create the Secret in THIS namespace, not kafka-proxy):
+  # tls:
+  #   trustedCertificates:
+  #     - secretName: proxy-ca
+  #       certificate: ca.crt

@@ -1,0 +1,2 @@
+# Maven build output (camel Quarkus projects)
+deploy/camel/*/target/

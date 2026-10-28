@@ -1,0 +1,44 @@
+# deploy/keycloak/04-kafka-realm-import.yaml — Step 1.4 (openshift-setup.md)
+# Creates the `kafka` realm for the platform's OIDC consumers. Client secrets
+# are inline for dev simplicity — do not commit rotated/real secrets this way.
+#
+# NOTE: the Kafka cluster itself is NOT wired to Keycloak — the proxy does not
+# support SASL/OAUTHBEARER token passthrough, so broker authentication stays
+# out of band (DMZ NetworkPolicies, Step 0.4). Keycloak serves the console's
+# OIDC browser login (Step 13).
+#
+# Client usage map:
+#   kafka-console      Console UI OIDC browser login            (Step 13.3)
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: kafka-realm-import
+  namespace: kafka-auth
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: kafka
+    enabled: true
+    # Short-lived access tokens (5 min) — access stops quickly on revocation
+    accessTokenLifespan: 300
+    clients:
+      # Console client — browser login (standard flow) for the Streams for
+      # Apache Kafka Console UI (Step 13); redirect URI points at the
+      # console's hostname (Step 13.2 spec.hostname)
+      - clientId: kafka-console
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: kafka-console-secret
+        standardFlowEnabled: true
+        serviceAccountsEnabled: false
+        redirectUris:
+          - "https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*"
+    # Demo user for the console's OIDC login (Step 13.3 subjects.include) —
+    # dev only; manage real users through your identity source.
+    users:
+      - username: demo
+        enabled: true
+        credentials:
+          - type: password
+            value: demopassword

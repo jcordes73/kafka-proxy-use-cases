@@ -1,0 +1,9 @@
+# deploy/proxy/02-kafkaproxy.yaml — Step 4 (openshift-setup.md)
+# The proxy itself. An empty spec creates a proxy with default configuration;
+# the operator creates a Deployment named after this resource (`simple`).
+kind: KafkaProxy
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: simple
+spec: {}

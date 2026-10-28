@@ -1,0 +1,14 @@
+# deploy/proxy/04-kafkaservice.yaml — Step 6 (openshift-setup.md)
+# The upstream (backend) Kafka cluster from Step 0: the plain internal
+# listener bootstrap and the full broker node ID range (dual-role pool 0–2).
+kind: KafkaService
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: my-cluster
+spec:
+  bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  nodeIdRanges:
+    - name: brokers
+      start: 0
+      end: 2

@@ -1,0 +1,30 @@
+# deploy/camel/producer/02-metrics.yaml — Step 15.8 (openshift-setup.md)
+# Service + ServiceMonitor registering the Quarkus Micrometer endpoint
+# (/q/metrics on the app port 8080) with user-workload monitoring.
+apiVersion: v1
+kind: Service
+metadata:
+  name: camel-kafka-producer
+  namespace: kafka-producer
+  labels:
+    app: camel-kafka-producer   # ServiceMonitor selects Services by this label
+spec:
+  selector:
+    app: camel-kafka-producer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: camel-kafka-producer
+  namespace: kafka-producer
+spec:
+  selector:
+    matchLabels:
+      app: camel-kafka-producer
+  endpoints:
+    - port: http
+      path: /q/metrics

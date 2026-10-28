@@ -1,0 +1,60 @@
+# deploy/kafka/02-kafka.yaml — Steps 0.2 + 15.3 (openshift-setup.md)
+# Dev Kafka cluster (KRaft, no ZooKeeper) with:
+#   - plain (9092) + tls (9093) internal listeners — the proxy's upstream
+#   - strimziMetricsReporter metricsConfig on 9404 (Step 15.3)
+#
+# NO OAUTH LISTENER: the proxy does not support SASL/OAUTHBEARER token
+# passthrough, so the Kafka cluster itself is not wired to Keycloak. Broker
+# isolation is enforced by the DMZ NetworkPolicies (Step 0.4); Keycloak
+# remains in the stack for the console's OIDC login (Step 13).
+#
+# networkPolicyPeers note (Step 0.4): Strimzi 0.51 auto-generates a listener
+# NetworkPolicy (my-cluster-network-policy-kafka) per Kafka cluster. Without
+# per-listener peers it opens the listener ports to ALL namespaces, which
+# defeats the DMZ in 03-kafka-netpol-dmz.yaml. The peers below restrict the
+# generated listener rules to: this namespace (operators) + the proxy namespace.
+kind: Kafka
+apiVersion: kafka.strimzi.io/v1
+metadata:
+  name: my-cluster
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+spec:
+  kafka:
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+        networkPolicyPeers:
+          - podSelector: {}          # any pod in this namespace (operators, probes)
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-proxy
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        networkPolicyPeers:
+          - podSelector: {}
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-proxy
+    config:
+      # Internal (inter-broker) communication uses the plain listener
+      inter.broker.listener.name: plain
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+    # Step 15.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
+    metricsConfig:
+      type: strimziMetricsReporter
+      values:
+        allowList:
+          - ".*"
+    storage:
+      type: ephemeral

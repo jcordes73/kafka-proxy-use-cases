@@ -1,0 +1,50 @@
+# deploy/kafka/00-cluster-operator-olm.yaml — Step 0.1 (openshift-setup.md)
+# Streams for Apache Kafka Cluster Operator, installed via OperatorHub/OLM
+# (the Red Hat downstream operator — the guide's recommended install files
+# path requires a subscription download; on OperatorHub-enabled clusters this
+# is the equivalent OLM-managed install).
+#
+# Channel amq-streams-3.2.x is version-pinned to the Streams 3.2 release line
+# (the `stable` channel tracks the same CSV today but will move to 3.3+).
+# installPlanApproval: Manual so OLM does not auto-upgrade across minor
+# versions — approve InstallPlans deliberately:
+#   oc get installplan -n kafka
+#   oc patch installplan <name> -n kafka-auth --type merge -p '{"spec":{"approved":true}}'
+#
+# WATCH SCOPE: the OperatorGroup targets `kafka` (OwnNamespace) initially.
+# When the bridge namespace is created in Step 12, extend the target list —
+# the operator deployment is stamped with olm.targetNamespaces and rolls
+# automatically:
+#   oc patch operatorgroup kafka-operator-group -n kafka --type merge \
+#     -p '{"spec":{"targetNamespaces":["kafka","kafka-http-bridge"]}}'
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: kafka-operator-group
+  namespace: kafka
+spec:
+  # Watch scope covers every namespace holding Strimzi-managed resources:
+  # the Kafka cluster (kafka) and the HTTP bridge (Step 12). Extending this
+  # list is the OLM way to add a watched namespace — OLM regenerates the RBAC
+  # and rolls the operator; no manual RoleBindings needed.
+  targetNamespaces:
+    - kafka
+    - kafka-http-bridge
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: amq-streams
+  namespace: kafka
+spec:
+  channel: amq-streams-3.2.x
+  name: amq-streams
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Manual

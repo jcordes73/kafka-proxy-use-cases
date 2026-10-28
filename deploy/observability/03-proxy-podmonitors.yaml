@@ -1,0 +1,31 @@
+# deploy/observability/03-proxy-podmonitors.yaml — Step 15.4 (openshift-setup.md)
+# Scrape the proxy's management port (9190) and the operator's metrics port.
+# Operator pod selector matches this install's labels (app=kroxylicious);
+# with the downstream operator, use the guide's app.kubernetes.io/* labels.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: proxy
+  namespace: kafka-proxy
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kroxylicious
+      app.kubernetes.io/component: proxy
+  podMetricsEndpoints:
+    - path: /metrics
+      port: management
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: operator
+  namespace: kafka-proxy
+spec:
+  selector:
+    matchLabels:
+      app: kroxylicious
+  podMetricsEndpoints:
+    - path: /metrics
+      port: http

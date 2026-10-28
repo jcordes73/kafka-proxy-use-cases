@@ -2,7 +2,7 @@
 
 A practical guide to **Streams for Apache Kafka Proxy** (Red Hat's supported Kafka protocol-aware proxy, part of the [Streams for Apache Kafka](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/) portfolio): what it is, the problems it solves, and which use cases it supports today.
 
-> Reflects the **Streams for Apache Kafka 3.2** release (Apache Kafka 4.2 / Strimzi 0.51.x, OpenShift 4.16–4.21 excluding 4.17). Capabilities evolve between releases — check the [current docs](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift) and the [3.2 release notes](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/release_notes_for_streams_for_apache_kafka_3.2_on_openshift) for details.
+> Reflects the **Streams for Apache Kafka 3.2** release (Apache Kafka 4.2 / Strimzi 0.51.x, OpenShift 4.16–4.21 excluding 4.17 — verified in practice on OpenShift 4.22). Capabilities evolve between releases — check the [current docs](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift) and the [3.2 release notes](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/release_notes_for_streams_for_apache_kafka_3.2_on_openshift) for details.
 
 ---
 
@@ -35,18 +35,72 @@ The proxy is built on the open-source [Kroxylicious](https://kroxylicious.io) pr
 
 Its core idea is the **filter mechanism**: additional behavior is injected into the data path **without changing your applications or the Kafka cluster itself**.
 
-```
-                      ┌──────────────────────────────┐
- Producers ─────────► │  Streams for Apache Kafka    │
-                      │  Proxy                       │ ───────► Kafka cluster
- Consumers ─────────► │  (virtual clusters,          │          (Streams for Apache
-                      │   filters, TLS)              │           Kafka or any
-                      └──────────────────────────────┘           Kafka-protocol cluster)
+```mermaid
+flowchart LR
+    subgraph openshift["OpenShift cluster"]
+        P["Streams for Apache Kafka Proxy<br/>(virtual clusters,<br/>filters, TLS)"]
+        K["Kafka cluster<br/>(Streams for Apache Kafka<br/>or any Kafka-protocol cluster)"]
+    end
+    Producers["Producers"] --> P
+    Consumers["Consumers"] --> P
+    P --> K
 ```
 
 Because clients and brokers are both unaware of the proxy's transformations, adoption is incremental: you can start with one topic or one team and roll out from there.
 
 ## Architecture at a Glance
+
+The full-stack deployment pattern (see the [complete diagram in openshift-setup.md](openshift-setup.md#the-architecture-youll-deploy)) — the whole stack runs on OpenShift, with each component in its own namespace for logical separation. The DMZ spans two namespaces: `kafka` (brokers, ingress only from the proxy) and `kafka-http-bridge` (the exposed Kafka Bridge, locked down by its own NetworkPolicy):
+
+```mermaid
+flowchart LR
+    A["Kafka clients"]
+    H["HTTP clients (REST)"]
+    U["Browser (OIDC)"]
+    subgraph openshift["OpenShift cluster — logical separation via namespaces"]
+        subgraph proxyNs["namespace: kafka-proxy"]
+            P["Kafka Proxy<br/>(virtual clusters + filters)"]
+        end
+        subgraph bridgeNs["namespace: kafka-http-bridge — DMZ"]
+            B["Kafka Bridge"]
+        end
+        subgraph consoleNs["namespace: kafka-console"]
+            C["Console UI"]
+        end
+        subgraph kafkaNs["namespace: kafka — DMZ"]
+            K["Kafka cluster<br/>(only the proxy may<br/>reach the brokers)"]
+        end
+        subgraph authNs["namespace: kafka-auth"]
+            KC["Red Hat build of Keycloak"]
+        end
+        subgraph producerNs["namespace: kafka-producer"]
+            direction TB
+            PROD["Camel producer route"]
+        end
+        subgraph consumerNs["namespace: kafka-consumer"]
+            direction TB
+            CONS["Camel consumer route"]
+        end
+    end
+    A --> P
+    H --> B
+    B --> P
+    U --> C
+    C --> P
+    PROD --> P
+    P --> CONS
+    P -- "Kafka protocol" --> K
+    U -. "OIDC login" .-> KC
+    C -. "validates session" .-> KC
+
+    style kafkaNs fill:#fdecea,stroke:#b71c1c,stroke-width:2px
+    style bridgeNs fill:#fff8e1,stroke:#e65100,stroke-width:2px
+    style authNs fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style proxyNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style consoleNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style producerNs fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    style consumerNs fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+```
 
 - **Virtual clusters** — the proxy presents one or more virtual Kafka clusters; each looks like a real cluster to clients but forwards to a physical (upstream) cluster.
 - **Filters** — behavior attached to a virtual cluster's data path (e.g., Record Encryption, Record Validation, Entity Isolation, Authorization). Custom filters can be developed against the Kroxylicious filter API (Java).
@@ -132,30 +186,53 @@ Rules are applied per topic (`topicNames`) with optional `defaultRule` fallback,
 
 ### 5. OIDC / OAuth 2.0 Authentication with Red Hat build of Keycloak
 
-**Status:** Supported — OAuth 2.0 (`OAUTHBEARER`) listener authentication is a first-class feature of Streams for Apache Kafka clusters; the Red Hat build of Keycloak is the supported OIDC authorization server.
+**Status:** Supported — the proxy relays the SASL/OAUTHBEARER exchange to the brokers, and can additionally inspect it, validate the tokens, or terminate it. The Red Hat build of Keycloak is the supported OIDC authorization server; the Streams for Apache Kafka Console also authenticates its browser users through it.
 
 **Problem.** Long-lived service credentials are scattered across producer and consumer configs; you need centralized identity, SSO, token-based access, and instant revocation — and client certificates are impractical to manage at scale.
 
-**Proxy solution.** Use the **Red Hat build of Keycloak** as the OIDC authorization server for the event-streaming platform:
+**Proxy solution.** The proxy supports mTLS client authentication (Red Hat [Deploying and Managing guide — Securing a proxy](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html-single/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift/index#con-virtualkafkacluster-mtls-operator)) and four SASL authentication modes — SASL Passthrough Inspection is documented in the Red Hat [SASL Inspection filter guide](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html-single/sasl_inspection_filter_guide/index), while the upstream [Client Authentication guide](https://kroxylicious.io/documentation/0.25.1/html/authentication-guide) additionally documents SASL Passthrough, OAuthBearer Validation, and SASL Termination. All are compatible with an OAuth-secured Kafka cluster behind the virtual cluster:
 
-- The Kafka cluster's listener is configured with **OAuth 2.0 (`OAUTHBEARER`) authentication**, validating JWTs issued by Keycloak (JWKS validation or token introspection).
-- Clients obtain access tokens from Keycloak and authenticate with `SASL/OAUTHBEARER` — no shared passwords, no client certificates.
-- The **proxy sits transparently in the data path**: the authenticated SASL exchange passes through to the broker, so **end-user identity reaches the broker** and native Kafka ACLs still apply. The proxy additionally provides the stable TLS endpoint and, via its Authorization filter, can enforce permissions on topics, consumer groups, and transactional IDs at the edge.
-- Token revocation is instant and centralized: disable the client in Keycloak and access stops at the next token expiry or introspection check.
+| Mode | Filter | What it does | Broker keeps auth authority? |
+|---|---|---|---|
+| SASL Passthrough *(default)* | none | Forwards the SASL exchange unchanged; broker-side ACLs, audit logging, and quotas keep working | Yes |
+| SASL Passthrough Inspection | `SaslInspection` | Broker still decides, but the proxy extracts the end-client principal — enabling the Authorization and Entity Isolation filters | Yes |
+| OAuthBearer Validation | `OauthBearerValidation` | Proxy validates each JWT against the issuer's JWKS endpoint (audience, issuer, expiry) and rejects invalid tokens *before* they reach the broker | Yes |
+| SASL Termination | `SaslTermination` | Proxy authenticates the client itself (OAUTHBEARER or SCRAM) and never forwards the exchange — only authenticated requests reach the brokers | No |
+
+With **Red Hat build of Keycloak** as the authorization server: clients obtain short-lived JWTs from Keycloak and authenticate with `SASL/OAUTHBEARER`; `OauthBearerValidation` verifies them against Keycloak's JWKS endpoint (with audience/issuer checks for cross-service replay protection); and `SaslInspection` puts the end-client identity in front of the proxy's Authorization filter. Token revocation is instant and centralized — disable the client in Keycloak and access stops at the next token expiry.
+
+The **Streams for Apache Kafka Console** authenticates its browser users through Keycloak independently (`security.oidc` on the `Console` CR) — SSO for the UI layer with no involvement of the proxy.
 
 Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full installation steps):
 
-```
- Clients ──► get JWT from Red Hat build of Keycloak (kafka-auth namespace)
-        │
-        └─► SASL/OAUTHBEARER + TLS ──► Kafka Proxy ──► Kafka listener (oauth)
-                                                        │ validates JWT via
-                                                        └─ Keycloak JWKS / introspection
+```mermaid
+flowchart LR
+    C["Kafka clients<br/>(SASL/OAUTHBEARER)"]
+    B["Browser users"]
+    subgraph openshift["OpenShift cluster"]
+        subgraph authNs["namespace: kafka-auth"]
+            KC["Red Hat build of Keycloak<br/>(JWKS endpoint)"]
+        end
+        subgraph proxyNs["namespace: kafka-proxy"]
+            P["Kafka Proxy<br/>SaslInspection +<br/>OauthBearerValidation"]
+        end
+        subgraph kafkaNs["namespace: kafka — DMZ"]
+            K["Kafka cluster<br/>(oauth listener)"]
+        end
+        CON["Kafka Console"]
+    end
+    C -- "1. obtain JWT" --> KC
+    C -- "2. SASL/OAUTHBEARER" --> P
+    P -- "validates JWT via JWKS" --> KC
+    P -- "3. forwards authenticated<br/>SASL exchange" --> K
+    B -- "OIDC login" --> KC
+    B --> CON
+    CON -- "Kafka protocol" --> P
 ```
 
-**Good fit when:** you want centralized identity for the streaming platform — SSO, short-lived tokens, per-client service accounts — instead of distributing long-lived credentials.
+**Good fit when:** you want centralized identity for the streaming platform — SSO, short-lived tokens, per-client service accounts — while keeping the proxy's stable endpoints, TLS termination, and edge authorization.
 
-> ℹ️ **Scope note:** the proxy's documented client-authentication options are TLS/mTLS (client certificates validated at the proxy). `SASL/OAUTHBEARER` exchanges pass through the proxy to the Kafka listener, which performs the OAuth validation. Full SASL/OAUTHBEARER passthrough and an experimental ACL authorizer are available in the upstream Kroxylicious project.
+> ℹ️ **Scope notes:** `OAUTHBEARER` inspection/validation supports JWS-signed JWTs only (JWE unsupported). In SASL Passthrough Inspection the proxy holds the authorization ID in memory but the broker still authenticates the client — an unauthenticated caller that can reach the proxy still gets proxied access, so pair inspection with `OauthBearerValidation` or mTLS if that matters to your threat model. This guide's reference deployment runs the data path unauthenticated by design (DMZ-guarded — see [openshift-setup.md, Step 1.5](openshift-setup.md#15--client-authentication-at-the-proxy)); enabling the OAuth path above is a documented variation.
 
 ### 6. Stable Client Endpoints & TLS Termination
 
@@ -190,6 +267,8 @@ Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full instal
 
 **Proxy solution.** The proxy exposes Prometheus-style metrics for its own operations (connections, requests, filter activity such as encryption operations and validation rejections). As of 3.2, **idle connection handling** can automatically close idle downstream/upstream connections — with dedicated metrics and extra Netty tuning properties for advanced cases. Scrape the metrics alongside broker and client metrics to get an end-to-end view of the data path, and alert on signals like "records passed through unencrypted" (missing KEK) or validation rejection spikes.
 
+On OpenShift, wire **every** component of the stack — brokers, proxy, HTTP Bridge, Keycloak, clients, and the Console itself — into the built-in **user-workload monitoring** stack; the full integration (enablement, `PodMonitor`/`ServiceMonitor` resources, DMZ NetworkPolicy allowances, alert rules) is [Step 15](openshift-setup.md#step-15-integrate-the-stack-with-openshift-user-workload-monitoring-observability) of the setup guide.
+
 ## Capability Matrix
 
 | Use case | Supported by Streams for Apache Kafka Proxy | Notes |
@@ -200,9 +279,9 @@ Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full instal
 | Poison-message prevention | ⚠️ Preview | Record Validation: Apicurio schema / JSON syntax |
 | Record provenance (JWS signatures) | ⚠️ Preview (new in 3.2) | JWS Signature validation in Record Validation filter |
 | Multi-tenancy (virtual clusters) | ✅ | Endpoint/TLS isolation + topic naming; not full per-tenant quotas |
-| Entity isolation (groups, txn IDs) | ⚠️ Preview (new in 3.2) | Per-principal isolation even with identical names |
-| Authorization at the proxy | ✅ | Permissions for topics, consumer groups, transactional IDs (expanded in 3.2) |
-| OIDC / OAuth 2.0 authentication (SASL/OAUTHBEARER) | ✅ | Keycloak listener auth on the Kafka cluster; SASL exchange passes through the proxy; proxy client auth = TLS/mTLS |
+| Entity isolation (groups, txn IDs) | ⚠️ Preview (new in 3.2) | Per-principal isolation even with identical names; needs an authenticated subject (mTLS or a SASL mode) |
+| Authorization at the proxy | ✅ | Permissions for topics, consumer groups, transactional IDs (expanded in 3.2); needs an authenticated subject (mTLS or a SASL mode) |
+| OIDC / OAuth 2.0 authentication (SASL/OAUTHBEARER) | ✅ | SASL exchange passes through the proxy; `SaslInspection` extracts the principal, `OauthBearerValidation` checks JWTs at the proxy (JWKS), `SaslTermination` authenticates at the proxy |
 | Stable endpoints / TLS termination | ✅ | Client → proxy TLS, proxy → broker TLS; `trustAnchorRef` Secret support |
 | Ingress: LBs and OpenShift Routes | ✅ (Routes new in 3.2) | Off-cluster exposure via Routes or load balancers |
 | Idle connection handling | ✅ (new in 3.2) | Optional auto-close with dedicated metrics |
@@ -222,20 +301,23 @@ Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full instal
 
 ## Getting Started on OpenShift
 
-> 📋 **Full step-by-step instructions** — deploying a Kafka cluster with Streams for Apache Kafka, the **Red Hat build of Keycloak** OIDC authorization server (in a `kafka-auth` namespace), operator install (OperatorHub or install files), custom resource walkthroughs with YAML, TLS certificate SAN requirements, and DNS setup — live in [**openshift-setup.md**](openshift-setup.md). The checklist below is the high-level path.
+> 📋 **Full step-by-step instructions** — deploying a Kafka cluster with Streams for Apache Kafka, the **Red Hat build of Keycloak** OIDC authorization server for the console UI (in a `kafka-auth` namespace), operator install (OperatorHub or install files), custom resource walkthroughs with YAML, TLS certificate SAN requirements, and DNS setup — live in [**openshift-setup.md**](openshift-setup.md). The checklist below is the high-level path.
 
 - [ ] Install the **proxy Operator** and deploy the proxy on OpenShift (see [*Deploying and Managing Streams for Apache Kafka Proxy on OpenShift*](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift) or the [local setup guide](openshift-setup.md)).
 - [ ] Create a `VirtualKafkaCluster` pointing at your upstream Kafka cluster (`KafkaService`); verify produce/consume through the proxy with no filters first. Off-cluster clients connect via OpenShift Route or load balancer.
 - [ ] **Run the proxy in a DMZ**: restrict Kafka cluster ingress to the proxy's namespace with `NetworkPolicy` rules so clients can only reach the proxy, and the proxy only the brokers (see [openshift-setup.md, Step 0.4](openshift-setup.md#0-4--restrict-kafka-ingress-to-the-proxy-namespace-dmz)).
 - [ ] (Optional) Deploy the **Kafka HTTP Bridge** in a dedicated `kafka-http-bridge` namespace with `bootstrapServers` pointing at the proxy's bootstrap, giving HTTP/REST clients access to the cluster through the proxy — and lock down its unauthenticated HTTP API with a NetworkPolicy (see [openshift-setup.md, Step 12](openshift-setup.md#step-12-deploy-the-kafka-http-bridge-dmz-client)).
+- [ ] (Optional) Deploy the **Streams for Apache Kafka Console** in a `kafka-console` namespace, connected to the proxy's *virtual* cluster for UI visibility and secured with Keycloak OIDC (see [openshift-setup.md, Step 13](openshift-setup.md#step-13-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)).
+- [ ] (Optional) Deploy **Camel Quarkus** producer and consumer clients in separate `kafka-producer` and `kafka-consumer` namespaces, connecting through the proxy with the latest supported Red Hat build of Apache Camel (see [openshift-setup.md, Step 14](openshift-setup.md#step-14-deploy-camel-producer-and-consumer-clients-kafka-producer-and-kafka-consumer-namespaces)).
 - [ ] Pick **one** filter to start with:
   - Record Encryption → set up Vault (Transit Engine) or AWS KMS first; create KEKs per encrypted topic (`KEK_<topicName>`); configure the filter; verify by producing through the proxy and consuming **directly from the broker** (you should see ciphertext).
   - Record Validation → set up Apicurio Registry; start with a `defaultRule` on a non-critical topic.
 - [ ] Tune DEK cache settings against your KMS costs and blast-radius requirements.
 - [ ] Scale proxy replicas for CPU (especially with encryption enabled) and run the KMS in HA.
 - [ ] Enable idle connection handling if long-lived client connections are inflating resource use.
-- [ ] Wire proxy metrics into your monitoring; alert on unencrypted pass-through and validation rejections.
+- [ ] Integrate the whole stack with **OpenShift user-workload monitoring** — broker metrics (Strimzi Metrics Reporter), proxy/operator PodMonitors, bridge metricsConfig, Keycloak auto-ServiceMonitor, Console `metricsSources`, Camel Micrometer endpoints, plus the NetworkPolicy allowances the DMZ needs ([Step 15](openshift-setup.md#step-15-integrate-the-stack-with-openshift-user-workload-monitoring-observability)); then alert on unencrypted pass-through and validation rejections.
 - [ ] Document rollback: repoint clients directly at the broker (plaintext flows resume only for topics where the proxy was the encryption point — plan cutover carefully).
+- [ ] (Optional) Develop and deploy a **custom filter** — generate a filter project with the upstream Maven archetype, package the plugin JARs onto a custom proxy image built in-cluster, and wire it to the virtual cluster ([Step 16](openshift-setup.md#step-16-develop-and-deploy-a-custom-filter-optional)).
 - [ ] Try the example custom resources in the `examples/` directory of the `streams-3.2-ocp-install-examples.zip` archive for a quick start.
 
 ## Glossary
@@ -256,10 +338,19 @@ Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full instal
 - [**Local: Setting Up Streams for Apache Kafka Proxy on OpenShift**](openshift-setup.md) — step-by-step install & deploy instructions
 - [Deploying and Managing Streams for Apache Kafka Proxy on OpenShift (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift) — operator install, API concepts, deploying, securing, tuning, monitoring
 - [Release Notes for Streams for Apache Kafka 3.2 on OpenShift](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/release_notes_for_streams_for_apache_kafka_3.2_on_openshift) — proxy changes in 3.2 (Entity Isolation filter, JWS validation, OpenShift Routes ingress, idle connection handling)
-- [Using the Streams for Apache Kafka Proxy (2.9)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/2.9/html/using_the_streams_for_apache_kafka_proxy) — built-in filter details (Record Encryption, Record Validation), configuration, metrics
+- [Record Encryption filter guide (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/record_encryption_filter_guide) — envelope encryption via a KMS
+- [Authorization filter guide (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/authorization_filter_guide) — per-principal permissions on topics, consumer groups, and transactional IDs
+- [(Preview) Record Validation filter guide (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/record_validation_filter_guide) — Apicurio schema / JSON syntax / JWS signature checks
+- [(Preview) Entity Isolation filter guide (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/entity_isolation_filter_guide) — per-principal isolation of consumer groups and transactional IDs
+- [SASL Inspection filter guide (3.2)](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/sasl_inspection_filter_guide) — extracts authenticated principals for downstream filters
 - [Streams for Apache Kafka documentation home](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/)
 - [Kroxylicious (upstream project)](https://kroxylicious.io) — filter API, custom filter development, benchmarks
-- [Kroxylicious Record Encryption guide](https://kroxylicious.io/documentation/0.21.0/html/record-encryption-guide)
+- [Kroxylicious Developer Quick Start (0.25.1)](https://kroxylicious.io/documentation/0.25.1/html/developer-quick-start) — generating and testing a custom filter project (Maven archetype, in-VM Kafka integration tests)
+- [Kroxylicious Developer Guide (0.25.1)](https://kroxylicious.io/documentation/0.25.1/html/developer-guide) — filter API, packaging, and the `classpath-plugins/` deployment mechanism (Alpha) — Red Hat 3.2 does not publish a filter-development guide
+- [Kroxylicious Javadocs (0.25.1)](https://kroxylicious.io/documentation/0.25.1/javadoc/index.html) — the filter API reference
+- [Kroxylicious Client Authentication guide (0.25.1)](https://kroxylicious.io/documentation/0.25.1/html/authentication-guide) — the SASL modes the 3.2 Red Hat docs don't cover separately (SASL Passthrough, OAuthBearer Validation, SASL Termination); mTLS and SASL Inspection are in the Red Hat guides above
 - [Kroxylicious proxy benchmarking (2026)](https://kroxylicious.io/benchmarking/performance/2026/05/28/benchmarking-the-proxy.html) — passthrough vs. record-encryption overhead
 - [Apicurio Registry](https://www.apicur.io/registry/) — schema registry used by the Record Validation filter
-- [Red Hat build of Keycloak](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.4) — OIDC authorization server for OAuth 2.0 listener authentication (operator guide)
+- [Red Hat build of Keycloak](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.4) — OIDC authorization server for the console's browser login (operator guide)
+- [Using the Streams for Apache Kafka Console](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/using_the_streams_for_apache_kafka_console) — web UI for Kafka clusters, with virtual-cluster and OIDC support
+- [Red Hat build of Apache Camel for Quarkus](https://docs.redhat.com/en/documentation/red_hat_build_of_apache_camel/) — supported Camel distribution for producer/consumer integrations (see the [release schedule](https://access.redhat.com/articles/7021827); Camel K is no longer supported)

@@ -1,0 +1,31 @@
+# deploy/camel/consumer/01-deployment.yaml — Step 14.4 (openshift-setup.md)
+# Consumer THROUGH the proxy (CAMEL_COMPONENT_KAFKA_BROKERS overrides
+# camel.component.kafka.brokers — guide Step 14.3; port is operator-allocated).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: camel-kafka-consumer
+  namespace: kafka-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: camel-kafka-consumer
+  template:
+    metadata:
+      labels:
+        app: camel-kafka-consumer
+    spec:
+      containers:
+        - name: app
+          image: camel-kafka-consumer:1.0.0   # ImageStreamTag, lookupPolicy.local → digest
+          env:
+            - name: CAMEL_COMPONENT_KAFKA_BROKERS
+              value: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

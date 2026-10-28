@@ -1,0 +1,60 @@
+# deploy/observability/04-bridge-metrics.yaml — Step 15.5 (openshift-setup.md)
+# JMX Exporter metricsConfig for the bridge (the Kafka client internals are
+# JMX-based), exposed on the bridge's existing HTTP port 8080 (port name
+# rest-api) alongside the REST API — plus the PodMonitor for it.
+# metricsConfig (not the deprecated spec.enableMetrics).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-metrics
+  namespace: kafka-http-bridge
+  labels:
+    app: strimzi
+data:
+  metrics-config.yml: |
+    lowercaseOutputName: true
+    rules:
+      # Kafka client metrics with topic context (more patterns in the shipped
+      # kafka-bridge-metrics.yaml example)
+      - pattern: kafka.producer<type=(.+), client-id=(.+), topic=(.+)><>([a-z-]+)-total
+        name: strimzi_bridge_kafka_producer_$4_total
+        type: COUNTER
+        labels: { type: "$1", clientId: "$2", topic: "$3" }
+      - pattern: kafka.consumer<type=(.+), client-id=(.+), topic=(.+)><>([a-z-]+)-total
+        name: strimzi_bridge_kafka_consumer_$4_total
+        type: COUNTER
+        labels: { type: "$1", clientId: "$2", topic: "$3" }
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaBridge
+metadata:
+  name: my-bridge
+  namespace: kafka-http-bridge
+spec:
+  replicas: 1
+  bootstrapServers: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+  http:
+    port: 8080
+  metricsConfig:
+    type: jmxPrometheusExporter
+    valueFrom:
+      configMapKeyRef:
+        name: bridge-metrics
+        key: metrics-config.yml
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: bridge-metrics
+  namespace: kafka-http-bridge
+  labels:
+    app: strimzi
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: KafkaBridge
+      strimzi.io/cluster: my-bridge
+  podMetricsEndpoints:
+    - path: /metrics
+      port: rest-api
