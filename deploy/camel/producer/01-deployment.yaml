@@ -1,6 +1,12 @@
-# deploy/camel/producer/01-deployment.yaml — Step 14.4 (openshift-setup.md)
+# deploy/camel/producer/01-deployment.yaml — Step 14.4 (docs/06-camel-clients.md)
 # Producer THROUGH the proxy (CAMEL_COMPONENT_KAFKA_BROKERS overrides
 # camel.component.kafka.brokers — guide Step 14.3; port is operator-allocated).
+# The virtual cluster ingress speaks TLS (guide Step 5): the proxy CA is
+# mounted as a PEM trust store (Step 14.4).
+# SASL/OAUTHBEARER: the JAAS/saslAuthType config in application.properties uses
+# the camel-producer Keycloak client — OAUTH_CLIENT_SECRET is injected here from
+# a Secret created in the guide. Kafka 4.x rejects http token endpoints unless
+# allowlisted, so JAVA_OPTS_APPEND sets org.apache.kafka.sasl.oauthbearer.allowed.urls.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,7 +27,25 @@ spec:
           image: camel-kafka-producer:1.0.0   # ImageStreamTag, lookupPolicy.local → digest
           env:
             - name: CAMEL_COMPONENT_KAFKA_BROKERS
-              value: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+              value: kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292
+            - name: OAUTH_CLIENT_ID   # camel-producer Keycloak service-account client
+              value: camel-producer
+            - name: OAUTH_CLIENT_SECRET   # Secret created in the guide (realm import does not create Secrets)
+              valueFrom:
+                secretKeyRef:
+                  name: camel-producer-oauth
+                  key: client-secret
+            - name: JAVA_OPTS_APPEND   # Kafka 4.x: allowlist the http token endpoint
+              value: -Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+            # TLS + SASL options (saslAuthType, oauthTokenEndpointUri etc.) are camelCase
+            # component options — they cannot be expressed as CAMEL_COMPONENT_KAFKA_*
+            # env vars (underscore mapping would produce the invalid "security.protocol"),
+            # so they are set in the image's application.properties (Step 14.3); only the
+            # CA mount and the OAuth secret live here.
+          volumeMounts:
+            - name: proxy-ca
+              mountPath: /etc/proxy-ca
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -29,3 +53,7 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+      volumes:
+        - name: proxy-ca
+          configMap:
+            name: proxy-ca

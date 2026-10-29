@@ -1,0 +1,34 @@
+# deploy/demos/09-multi-tenant-virtual-clusters.yaml — Demo 9 (docs/11-demos.md)
+# Multi-tenancy: one proxy, many logical clusters. The stack already exposes
+# two virtual clusters over two physical clusters (deploy/proxy/05). This demo
+# adds a THIRD virtual cluster over the SAME physical backend as
+# kafka-cluster-1 — a separate logical cluster (its own bootstrap, its own
+# filters/policies) sharing one proxy instance and one ingress.
+#
+# Two logical clusters can carry different filterRefs — e.g. tenant-specific
+# policies (combine with deploy/demos/06 for per-tenant authorization rules).
+#
+# The proxy-tls Secret carries a wildcard SAN covering the generated
+# bootstrap/broker names, so the new virtual cluster can reuse the same
+# certificate. Revert with:
+#   oc delete virtualkafkacluster/shared-cluster-1 -n kafka-proxy
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: VirtualKafkaCluster
+metadata:
+  name: shared-cluster-1
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: kafka-cluster-1
+  ingresses:
+    - ingressRef:
+        name: cluster-ip-1
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret
+  # empty filterRefs — traffic passes through unchanged; attach per-tenant
+  # filters here (e.g. deploy/demos/06-authorization-filters.yaml rules)

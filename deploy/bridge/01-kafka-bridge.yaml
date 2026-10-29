@@ -1,8 +1,15 @@
-# deploy/bridge/01-kafka-bridge.yaml — Step 12.2 (openshift-setup.md)
+# deploy/bridge/01-kafka-bridge.yaml — Step 12.2 (docs/04-http-bridge.md)
 # The bridge is a plain Kafka client of the VIRTUAL cluster: bootstrapServers
 # points at the proxy's clusterIP bootstrap, so HTTP traffic flows through the
-# proxy and the DMZ stays intact.
-# Bootstrap port is operator-allocated (guide Step 11).
+# proxy and the DMZ stays intact. The virtual cluster ingress speaks TLS
+# (SNI, guide Step 5) — tls.trustedCertificates makes the bridge trust the
+# proxy's CA (Secret created in Step 12.2). The proxied tls listener requires
+# SASL/OAUTHBEARER (Step 0.2): the bridge authenticates with the Strimzi OAuth
+# client handler (bundled in the bridge image), obtaining tokens from the
+# kafka-bridge Keycloak client via client_credentials. The OAUTH_CLIENT_SECRET
+# env comes from a Secret created in the guide (the realm import does not
+# create Kubernetes Secrets). The token exchange passes through the proxy and
+# the brokers validate the JWT against Keycloak's JWKS.
 ---
 apiVersion: v1
 kind: Namespace
@@ -19,12 +26,31 @@ metadata:
 spec:
   replicas: 1
   # Kafka bootstrap servers (required) — the PROXY's clusterIP bootstrap, not the Kafka cluster's
-  bootstrapServers: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+  bootstrapServers: kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292
+  tls:
+    trustedCertificates:
+      - secretName: proxy-ca
+        certificate: ca.crt
+  # SASL/OAUTHBEARER against the tls listener, through the proxy (SASL
+  # passthrough). config accepts sasl.-prefixed properties only.
+  authentication:
+    type: custom
+    sasl: true
+    config:
+      sasl.mechanism: OAUTHBEARER
+      sasl.jaas.config: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required oauth.token.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token";
+      sasl.login.callback.handler.class: io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
+  # Credentials for the Strimzi OAuth client handler (OAUTH_CLIENT_ID /
+  # OAUTH_CLIENT_SECRET env vars)
+  template:
+    bridgeContainer:
+      env:
+        - name: OAUTH_CLIENT_ID
+          value: kafka-bridge
+        - name: OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: kafka-bridge-oauth
+              key: client-secret
   http:
     port: 8080
-  # If the proxy's clusterIP ingress uses TLS, trust the CA that signed the proxy's
-  # server certificate (create the Secret in THIS namespace, not kafka-proxy):
-  # tls:
-  #   trustedCertificates:
-  #     - secretName: proxy-ca
-  #       certificate: ca.crt

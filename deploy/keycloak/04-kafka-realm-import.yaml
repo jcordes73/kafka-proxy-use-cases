@@ -2,13 +2,31 @@
 # Creates the `kafka` realm for the platform's OIDC consumers. Client secrets
 # are inline for dev simplicity — do not commit rotated/real secrets this way.
 #
-# NOTE: the Kafka cluster itself is NOT wired to Keycloak — the proxy does not
-# support SASL/OAUTHBEARER token passthrough, so broker authentication stays
-# out of band (DMZ NetworkPolicies, Step 0.4). Keycloak serves the console's
-# OIDC browser login (Step 13).
+# Keycloak IS wired to the Kafka data path: the tls listener (9093) requires
+# SASL/OAUTHBEARER (Step 0.2, deploy/kafka/02-kafka.yaml) — the service-account
+# clients below are the data-path credentials. Each workload obtains tokens
+# with the client_credentials grant and authenticates through the proxy
+# (SASL passthrough); the brokers validate the tokens against Keycloak's JWKS.
+# Keycloak also serves the console's OIDC browser login (Step 13).
 #
 # Client usage map:
-#   kafka-console      Console UI OIDC browser login            (Step 13.3)
+#   kafka-console       Console UI OIDC browser login            (Step 13.3)
+#   kafka-console-kafka Console's Kafka connection (OAUTHBEARER) (Step 13.2)
+#   kafka-bridge        HTTP Bridge Kafka connection             (Step 12.2)
+#   camel-producer      Camel producer Kafka connection          (Step 14.3)
+#   camel-consumer      Camel consumer Kafka connection          (Step 14.3)
+#   demo-client         kcat/CLI smoke tests (Step 11)
+#   (MirrorMaker 2 connects via the unauthenticated plain listener — no client
+#    needed here, see docs/10-mirrormaker2.md)
+#
+# To use a client secret in a Deployment, create a Secret in the workload's
+# namespace (Secrets cannot be referenced across namespaces) — the realm
+# import does NOT create Kubernetes Secrets:
+#   oc create secret generic camel-producer-oauth \
+#     --from-literal=client-secret=camel-producer-secret -n kafka-producer
+# Hardening: enable oauth.check.audience="true" on the broker listener and add
+# an audience mapper (aud: kafka) to each client so tokens issued for other
+# services are rejected.
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: KeycloakRealmImport
 metadata:
@@ -17,6 +35,9 @@ metadata:
 spec:
   keycloakCRName: keycloak
   realm:
+    # strategy: OVERWRITE — re-imports update existing clients (their Secrets)
+    # instead of Keycloak's default IGNORE, which would silently skip them.
+    strategy: OVERWRITE
     realm: kafka
     enabled: true
     # Short-lived access tokens (5 min) — access stops quickly on revocation
@@ -34,6 +55,45 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - "https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*"
+      # Service-account clients — SASL/OAUTHBEARER credentials for the Kafka
+      # data path (client_credentials grant). The service account's
+      # preferred_username (service-account-<clientId>) becomes the Kafka
+      # principal on the tls listener.
+      - clientId: kafka-console-kafka
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: kafka-console-kafka-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
+      - clientId: kafka-bridge
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: kafka-bridge-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
+      - clientId: camel-producer
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: camel-producer-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
+      - clientId: camel-consumer
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: camel-consumer-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
+      - clientId: demo-client
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: demo-client-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
     # Demo user for the console's OIDC login (Step 13.3 subjects.include) —
     # dev only; manage real users through your identity source.
     users:

@@ -41,6 +41,12 @@ spec:
     headers: xforwarded
   # Step 15.6 — expose Prometheus metrics on the management port (9000);
   # the operator then auto-creates a ServiceMonitor for user-workload monitoring.
+  # http-enabled: serve plain HTTP on 8080 in-pod — the OAuth chain (broker
+  # JWKS fetch + client token endpoints) uses the internal http keycloak-http
+  # Service (deploy/keycloak/05-keycloak-http-service.yaml). DEV ONLY: in-cluster
+  # plain http — for production use the TLS route and trust its CA everywhere.
   additionalOptions:
     - name: metrics-enabled
+      value: "true"
+    - name: http-enabled
       value: "true"

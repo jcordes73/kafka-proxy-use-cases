@@ -1,0 +1,39 @@
+# deploy/apicurio/01-subscription.yaml — Step 17.1 (openshift-setup.md)
+# Namespace + OperatorGroup + Subscription for the Red Hat build of Apicurio
+# Registry operator (package apicurio-registry-3), applied as a single
+# transaction (the OperatorGroup must exist when the Subscription is validated).
+#
+# Channel 3.2.x aligns with the Streams for Apache Kafka 3.2 LTS line; the
+# Record Validation filter requires Apicurio Registry 3.x (2.x support removed).
+#
+# NOTE: installPlanApproval is Manual so OLM does not auto-upgrade the registry
+# (major storage/schema evolution between 3.x minors). Approve InstallPlans
+# deliberately: `oc get installplan -n kafka-registry` then
+# `oc patch installplan <name> -n kafka-registry --type merge -p '{"spec":{"approved":true}}'`.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-registry
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: apicurio-registry-operator-group
+  namespace: kafka-registry
+spec:
+  # OwnNamespace install — the operator manages the registry in its own namespace
+  targetNamespaces:
+    - kafka-registry
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: apicurio-registry-3
+  namespace: kafka-registry
+spec:
+  channel: 3.2.x
+  name: apicurio-registry-3
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Manual

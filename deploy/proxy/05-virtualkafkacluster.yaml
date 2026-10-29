@@ -1,17 +1,46 @@
-# deploy/proxy/05-virtualkafkacluster.yaml — Steps 7–8 (openshift-setup.md)
-# Wires proxy + ingress + backend together. filterRefs omitted: traffic passes
-# through unchanged — validate basic connectivity first, then add filters one
-# at a time (see the use case catalog in README.md).
+# deploy/proxy/05-virtualkafkacluster.yaml — Steps 7–8 (docs/03-proxy.md)
+# Wires proxy + ingress + backend together: one virtual cluster per backend
+# KafkaService, each with its own TLS clusterIP ingress. The TLS block attaches
+# the server certificate (Secret proxy-tls, wildcard SAN) to the ingress —
+# required for clusterIP ingresses with protocol: TLS.
+# filterRefs omitted on kafka-cluster-2: traffic passes through unchanged.
+# kafka-cluster-1 carries the record-validation filter (Step 17) — validate
+# basic connectivity first, then add filters one at a time (see the use case
+# catalog in README.md).
 kind: VirtualKafkaCluster
 apiVersion: kroxylicious.io/v1alpha1
 metadata:
-  name: my-cluster
+  name: kafka-cluster-1
   namespace: kafka-proxy
 spec:
   proxyRef:
     name: simple
   targetKafkaServiceRef:
-    name: my-cluster
+    name: kafka-cluster-1
   ingresses:
     - ingressRef:
-        name: cluster-ip
+        name: cluster-ip-1
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret
+  filterRefs:
+    - name: record-validation
+---
+kind: VirtualKafkaCluster
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  name: kafka-cluster-2
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: kafka-cluster-2
+  ingresses:
+    - ingressRef:
+        name: cluster-ip-2
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret

@@ -1,23 +1,32 @@
-# deploy/kafka/02-kafka.yaml — Steps 0.2 + 15.3 (openshift-setup.md)
-# Dev Kafka cluster (KRaft, no ZooKeeper) with:
-#   - plain (9092) + tls (9093) internal listeners — the proxy's upstream
+# deploy/kafka/02-kafka.yaml — Steps 0.2 + 15.3 (docs/01-kafka-cluster.md)
+# Two dev Kafka clusters (KRaft, no ZooKeeper), one per namespace, each with:
+#   - plain (9092) + tls (9093) internal listeners — the proxy's upstreams
+#   - SASL/OAUTHBEARER (only mechanism) on the tls listener (SASL_SSL)
 #   - strimziMetricsReporter metricsConfig on 9404 (Step 15.3)
 #
-# NO OAUTH LISTENER: the proxy does not support SASL/OAUTHBEARER token
-# passthrough, so the Kafka cluster itself is not wired to Keycloak. Broker
-# isolation is enforced by the DMZ NetworkPolicies (Step 0.4); Keycloak
-# remains in the stack for the console's OIDC login (Step 13).
+# OAUTHBEARER ON THE TLS LISTENER: the proxy cannot authenticate to the brokers
+# itself (KafkaService has no SASL support) — it relays the client's SASL/
+# OAUTHBEARER exchange to the brokers (SASL passthrough). Every client of the
+# virtual cluster must authenticate with OAUTHBEARER: tokens come from the
+# `kafka` realm service-account clients (deploy/keycloak/04-kafka-realm-import.yaml),
+# validated by the brokers against Keycloak's JWKS endpoint (internal http
+# service — for production use the TLS route and trust its CA). Strimzi 0.51
+# deprecated the dedicated `authentication.type: oauth` listener type, so this
+# uses `custom` auth with the Strimzi OAuth callback handlers (Strimzi prefixes
+# listenerConfig keys with listener.name.tls.). Inter-broker traffic stays on
+# the unauthenticated plain listener. Broker isolation is enforced by the DMZ
+# NetworkPolicies (Step 0.4).
 #
 # networkPolicyPeers note (Step 0.4): Strimzi 0.51 auto-generates a listener
-# NetworkPolicy (my-cluster-network-policy-kafka) per Kafka cluster. Without
+# NetworkPolicy (<cluster-name>-network-policy-kafka) per Kafka cluster. Without
 # per-listener peers it opens the listener ports to ALL namespaces, which
 # defeats the DMZ in 03-kafka-netpol-dmz.yaml. The peers below restrict the
 # generated listener rules to: this namespace (operators) + the proxy namespace.
 kind: Kafka
 apiVersion: kafka.strimzi.io/v1
 metadata:
-  name: my-cluster
-  namespace: kafka
+  name: kafka-cluster-1
+  namespace: kafka-cluster-1
   annotations:
     strimzi.io/node-pools: enabled
 spec:
@@ -33,17 +42,129 @@ spec:
           - namespaceSelector:
               matchLabels:
                 kubernetes.io/metadata.name: kafka-proxy
+          # MirrorMaker 2 replication plane (Step 18) — kafka-mm2 uses the
+          # plain listener only (no authentication needed for replication)
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-mm2
       - name: tls
         port: 9093
         type: internal
         tls: true
+        authentication:
+          # SASL/OAUTHBEARER over TLS (SASL_SSL) — OAUTHBEARER is the ONLY
+          # mechanism on this listener (no SCRAM/PLAIN). In Strimzi 0.51 the
+          # dedicated `authentication.type: oauth` is deprecated, so OAuth is
+          # configured via `custom` auth with the Strimzi OAuth callback
+          # handlers (listenerConfig keys are prefixed with listener.name.tls.
+          # by the operator). Tokens are validated locally against Keycloak's
+          # JWKS endpoint. connections.max.reauth.ms makes clients
+          # reauthenticate when their token expires mid-connection.
+          # unsecuredLoginStringClaim_sub mints a dummy login token for the
+          # broker's startup client-login (Kafka 4.x unsecured handler fails
+          # with "No principal name in JWT claim: sub" without it — Strimzi's
+          # own generated oauth config includes the same option).
+          type: custom
+          sasl: true
+          listenerConfig:
+            connections.max.reauth.ms: 3600000
+            sasl.enabled.mechanisms: OAUTHBEARER
+            principal.builder.class: io.strimzi.kafka.oauth.server.OAuthKafkaPrincipalBuilder
+            oauthbearer.sasl.server.callback.handler.class: io.strimzi.kafka.oauth.server.JaasServerOauthValidatorCallbackHandler
+            oauthbearer.sasl.jaas.config: |
+              org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+                unsecuredLoginStringClaim_sub="thePrincipalName" \
+                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.apps.ocp.67vts.sandbox598.opentlc.com:8080/realms/kafka" \
+                oauth.jwks.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs" \
+                oauth.username.claim="preferred_username" \
+                oauth.jwks.refresh.seconds="300" \
+                oauth.jwks.expiry.seconds="360";
         networkPolicyPeers:
           - podSelector: {}
           - namespaceSelector:
               matchLabels:
                 kubernetes.io/metadata.name: kafka-proxy
     config:
-      # Internal (inter-broker) communication uses the plain listener
+      # Internal (inter-broker) communication uses the plain listener (no SASL)
+      inter.broker.listener.name: plain
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+    # Step 15.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
+    metricsConfig:
+      type: strimziMetricsReporter
+      values:
+        allowList:
+          - ".*"
+    storage:
+      type: ephemeral
+---
+kind: Kafka
+apiVersion: kafka.strimzi.io/v1
+metadata:
+  name: kafka-cluster-2
+  namespace: kafka-cluster-2
+  annotations:
+    strimzi.io/node-pools: enabled
+spec:
+  kafka:
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+        networkPolicyPeers:
+          - podSelector: {}          # any pod in this namespace (operators, probes)
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-proxy
+          # MirrorMaker 2 replication plane (Step 18) — kafka-mm2 uses the
+          # plain listener only (no authentication needed for replication)
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-mm2
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          # SASL/OAUTHBEARER over TLS (SASL_SSL) — OAUTHBEARER is the ONLY
+          # mechanism on this listener (no SCRAM/PLAIN). In Strimzi 0.51 the
+          # dedicated `authentication.type: oauth` is deprecated, so OAuth is
+          # configured via `custom` auth with the Strimzi OAuth callback
+          # handlers (listenerConfig keys are prefixed with listener.name.tls.
+          # by the operator). Tokens are validated locally against Keycloak's
+          # JWKS endpoint. connections.max.reauth.ms makes clients
+          # reauthenticate when their token expires mid-connection.
+          # unsecuredLoginStringClaim_sub mints a dummy login token for the
+          # broker's startup client-login (Kafka 4.x unsecured handler fails
+          # with "No principal name in JWT claim: sub" without it — Strimzi's
+          # own generated oauth config includes the same option).
+          type: custom
+          sasl: true
+          listenerConfig:
+            connections.max.reauth.ms: 3600000
+            sasl.enabled.mechanisms: OAUTHBEARER
+            principal.builder.class: io.strimzi.kafka.oauth.server.OAuthKafkaPrincipalBuilder
+            oauthbearer.sasl.server.callback.handler.class: io.strimzi.kafka.oauth.server.JaasServerOauthValidatorCallbackHandler
+            oauthbearer.sasl.jaas.config: |
+              org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+                unsecuredLoginStringClaim_sub="thePrincipalName" \
+                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.apps.ocp.67vts.sandbox598.opentlc.com:8080/realms/kafka" \
+                oauth.jwks.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs" \
+                oauth.username.claim="preferred_username" \
+                oauth.jwks.refresh.seconds="300" \
+                oauth.jwks.expiry.seconds="360";
+        networkPolicyPeers:
+          - podSelector: {}
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kafka-proxy
+    config:
+      # Internal (inter-broker) communication uses the plain listener (no SASL)
       inter.broker.listener.name: plain
       offsets.topic.replication.factor: 3
       transaction.state.log.replication.factor: 3

@@ -1,0 +1,55 @@
+# deploy/apicurio/04-netpol-dmz.yaml — Step 17.3 (openshift-setup.md)
+# DMZ lockdown for Apicurio Registry, mirroring the Kafka pattern (Step 0.4):
+# default-deny + same-namespace + proxy-namespace-only on the REST port (8080).
+# The operator-generated NetworkPolicy (allow-all on 8080/9000) is disabled in
+# 03-registry.yaml — this policy set replaces it.
+# The UI keeps same-namespace access only; browse it with `oc port-forward`.
+---
+# 1. Default deny: no ingress to registry pods at all
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: apicurio-registry-deny-ingress
+  namespace: kafka-registry
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: apicurio-registry
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# 2. Allow all traffic from within the kafka-registry namespace
+#    (registry app ↔ PostgreSQL, UI)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: apicurio-registry-allow-same-namespace
+  namespace: kafka-registry
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: apicurio-registry
+  ingress:
+    - from:
+        - podSelector: {}   # any pod in the kafka-registry namespace
+---
+# 3. DMZ ingress: only the kafka-proxy namespace, only on the REST port
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: apicurio-registry-allow-proxy
+  namespace: kafka-registry
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: apicurio-registry
+      app.kubernetes.io/component: app
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-proxy
+      ports:
+        - port: 8080
+          protocol: TCP

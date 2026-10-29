@@ -1,0 +1,82 @@
+# deploy/demos/06-authorization-filters.yaml — Demo 6 (docs/11-demos.md)
+# Authorization at the proxy: SaslInspection extracts the end-client principal
+# from the SASL/OAUTHBEARER exchange; the Authorization filter enforces ACL
+# rules BEFORE requests reach the brokers.
+#
+# Chain order matters: SaslInspection first (builds the authenticated subject
+# the Authorization filter needs), then the existing record-validation filter,
+# then Authorization.
+#
+# The ACL rules ConfigMap uses the placeholder <DEMO-CLIENT-SUBJECT> — replace
+# it with the principal SaslInspection derives for the demo-client token
+# (the JWT `sub` claim for OAUTHBEARER — decode the token to discover it,
+# see docs/11-demos.md Demo 6). Then apply this file: it REPLACES the
+# kafka-cluster-1 VirtualKafkaCluster from deploy/proxy/05-virtualkafkacluster.yaml.
+# Revert with: oc apply -f deploy/proxy/05-virtualkafkacluster.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acl-rules
+  namespace: kafka-proxy
+data:
+  acl-rules.txt: |
+    from io.kroxylicious.filter.authorization import TopicResource as Topic, GroupResource as Group, TransactionalIdResource as TransactionalId;
+
+    // demo-client may read and write the demo topic only
+    allow User with name = "<DEMO-CLIENT-SUBJECT>" to {READ, WRITE, DESCRIBE} Topic with name = "test-topic";
+    allow User with name = "<DEMO-CLIENT-SUBJECT>" to {READ, DESCRIBE} Group with name like "demo-*";
+
+    // camel-producer is intentionally NOT granted anything — the deny path:
+    // its produce/fetch requests are rejected with TOPIC_AUTHORIZATION_FAILED
+    // before reaching the brokers.
+
+    // deny by default
+    otherwise deny;
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: sasl-inspection
+  namespace: kafka-proxy
+spec:
+  type: SaslInspection
+  configTemplate:
+    enabledMechanisms: ["OAUTHBEARER"]
+    # no requests other than the SASL exchange are forwarded until
+    # authentication succeeds
+    requireAuthentication: true
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: proxy-authorization
+  namespace: kafka-proxy
+spec:
+  type: Authorization
+  configTemplate:
+    authorizer: AclAuthorizerService
+    authorizerConfig:
+      aclFile: ${configmap:acl-rules:acl-rules.txt}
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: VirtualKafkaCluster
+metadata:
+  name: kafka-cluster-1
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: kafka-cluster-1
+  ingresses:
+    - ingressRef:
+        name: cluster-ip-1
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret
+  filterRefs:
+    - name: sasl-inspection
+    - name: record-validation
+    - name: proxy-authorization

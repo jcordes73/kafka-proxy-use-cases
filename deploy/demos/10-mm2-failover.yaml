@@ -1,0 +1,44 @@
+# deploy/demos/10-mm2-failover.yaml — Demo 10 (docs/11-demos.md)
+# MirrorMaker 2 failover/failback variant: same replication flow as
+# deploy/mirrormaker2/01-mirrormaker2.yaml (plain listener, no auth) PLUS the
+# checkpoint and heartbeat connectors:
+#   - checkpointConnector translates consumer-group offsets from the source to
+#     the target (sync.group.offsets.enabled applies them to the target) —
+#     enabling a failover where consumers resume at the translated offsets,
+#     and a failback afterwards.
+#   - heartbeatConnector mirrors source-cluster liveness as a heartbeat topic.
+#
+# Apply this file: it REPLACES the running KafkaMirrorMaker2 (same name).
+# Revert with: oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaMirrorMaker2
+metadata:
+  name: kafka-cluster-1-to-2
+  namespace: kafka-mm2
+  labels:
+    strimzi.io/cluster: kafka-cluster-1-to-2
+spec:
+  replicas: 1
+  target:
+    alias: kafka-cluster-2
+    bootstrapServers: kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9092
+    groupId: mm2-connect-cluster
+    configStorageTopic: mm2-configs
+    offsetStorageTopic: mm2-offsets
+    statusStorageTopic: mm2-status
+  mirrors:
+    - source:
+        alias: kafka-cluster-1
+        bootstrapServers: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9092
+        sourceConnector: {}
+      # Offset translation for failover/failback (Red Hat 3.2 guide, 10.9.4):
+      # checkpoints consumer-group offsets to the target and applies them
+      # (sync.group.offsets.enabled) so consumers can resume from the
+      # translated offsets after a cutover.
+      checkpointConnector:
+        config:
+          sync.group.offsets.enabled: "true"
+      # Source-cluster liveness, mirrored as a heartbeat topic
+      heartbeatConnector: {}
+      topicsPattern: ".*"
+      groupsPattern: ".*"

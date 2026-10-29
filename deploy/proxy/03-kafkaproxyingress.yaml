@@ -1,13 +1,33 @@
-# deploy/proxy/03-kafkaproxyingress.yaml — Step 5 (openshift-setup.md)
-# clusterIP ingress: on-cluster clients reach the virtual cluster over a
-# ClusterIP Service (plain TCP here; use protocol: TLS + a certificate for TLS).
+# deploy/proxy/03-kafkaproxyingress.yaml — Step 5 (docs/03-proxy.md)
+# clusterIP ingresses with TLS: on-cluster clients reach a virtual cluster over
+# a ClusterIP Service speaking TLS. The proxy terminates TLS on ONE shared SNI
+# port — SNI identifies the virtual cluster and broker, so any number of TLS
+# virtual clusters can share a proxy. (Plain-TCP clusterIP ingresses use
+# port-per-broker instead, and the operator allows only ONE such ingress per
+# proxy — kroxylicious/kroxylicious#1902.)
+# One ingress per virtual cluster — sharing a clusterIP ingress between
+# virtual clusters is also rejected ("conflicts with another ingress").
+# The server certificate (Secret proxy-tls) carries a wildcard SAN
+# (*.kafka-proxy.svc.cluster.local) covering the bootstrap and per-broker
+# Service names of every virtual cluster in this namespace.
 kind: KafkaProxyIngress
 apiVersion: kroxylicious.io/v1alpha1
 metadata:
   namespace: kafka-proxy
-  name: cluster-ip
+  name: cluster-ip-1
 spec:
   proxyRef:
     name: simple
   clusterIP:
-    protocol: TCP
+    protocol: TLS
+---
+kind: KafkaProxyIngress
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: cluster-ip-2
+spec:
+  proxyRef:
+    name: simple
+  clusterIP:
+    protocol: TLS

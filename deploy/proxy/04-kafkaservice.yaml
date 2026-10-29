@@ -1,13 +1,37 @@
-# deploy/proxy/04-kafkaservice.yaml — Step 6 (openshift-setup.md)
-# The upstream (backend) Kafka cluster from Step 0: the plain internal
-# listener bootstrap and the full broker node ID range (dual-role pool 0–2).
+# deploy/proxy/04-kafkaservice.yaml — Step 6 (docs/03-proxy.md)
+# The upstream (backend) Kafka clusters from Step 0, reached over their TLS
+# listener (9093). strimziKafkaRef lets the operator discover the bootstrap
+# address from the Strimzi Kafka CR's status and auto-trust the Strimzi
+# cluster CA (Secret <cluster>-cluster-ca-cert) — no hardcoded bootstrap, no
+# copied CA. One KafkaService per backend cluster; both live in the proxy
+# namespace.
 kind: KafkaService
 apiVersion: kroxylicious.io/v1alpha1
 metadata:
   namespace: kafka-proxy
-  name: my-cluster
+  name: kafka-cluster-1
 spec:
-  bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  strimziKafkaRef:
+    name: kafka-cluster-1
+    namespace: kafka-cluster-1
+    listenerName: tls
+    trustStrimziCaCertificate: true
+  nodeIdRanges:
+    - name: brokers
+      start: 0
+      end: 2
+---
+kind: KafkaService
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: kafka-cluster-2
+spec:
+  strimziKafkaRef:
+    name: kafka-cluster-2
+    namespace: kafka-cluster-2
+    listenerName: tls
+    trustStrimziCaCertificate: true
   nodeIdRanges:
     - name: brokers
       start: 0

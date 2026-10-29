@@ -1,12 +1,29 @@
-# deploy/kafka/01-kafka-nodepool.yaml — Step 0.2 (openshift-setup.md)
-# Dual-role (broker + controller) KRaft node pool, dev-sized (ephemeral storage).
+# deploy/kafka/01-kafka-nodepool.yaml — Step 0.2 (docs/01-kafka-cluster.md)
+# One dual-role (broker + controller) KRaft node pool per cluster, dev-sized
+# (ephemeral storage). Cluster names match their namespaces: kafka-cluster-1
+# and kafka-cluster-2.
 kind: KafkaNodePool
 apiVersion: kafka.strimzi.io/v1
 metadata:
   name: dual-role
-  namespace: kafka
+  namespace: kafka-cluster-1
   labels:
-    strimzi.io/cluster: my-cluster
+    strimzi.io/cluster: kafka-cluster-1
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: ephemeral
+---
+kind: KafkaNodePool
+apiVersion: kafka.strimzi.io/v1
+metadata:
+  name: dual-role
+  namespace: kafka-cluster-2
+  labels:
+    strimzi.io/cluster: kafka-cluster-2
 spec:
   replicas: 3
   roles:

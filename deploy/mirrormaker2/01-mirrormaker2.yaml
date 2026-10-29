@@ -1,0 +1,64 @@
+# deploy/mirrormaker2/01-mirrormaker2.yaml — Step 18 (docs/10-mirrormaker2.md)
+# MirrorMaker 2 replication between the two dev clusters:
+#   source: kafka-cluster-1 (kafka-cluster-1 namespace)
+#   target: kafka-cluster-2 (kafka-cluster-2 namespace)
+#
+# Both clusters connect over their PLAIN listener (9092) — unauthenticated and
+# unencrypted. No OAUTHBEARER credentials, Keycloak client, or TLS trust are
+# needed (the alternative — the OAUTHBEARER-only tls listener — requires the
+# mm2 Keycloak client and cluster CA copies; see the guide). Replication
+# traffic stays in-cluster; the DMZ NetworkPolicy allowance added in Step 0.4
+# opens the plain listener port only (kafka-mm2 namespace, port 9092).
+#
+# MM2's internal topics (config/offsets/status) are created on the TARGET
+# cluster. Replication prefixes mirrored resources with the source alias
+# (kafka-cluster-1.<topic>).
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kafka-mm2
+  annotations:
+    openshift.io/description: "MirrorMaker 2 (kafka-cluster-1 → kafka-cluster-2)"
+---
+# kind: KafkaMirrorMaker2
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaMirrorMaker2
+metadata:
+  name: kafka-cluster-1-to-2
+  namespace: kafka-mm2
+  labels:
+    strimzi.io/cluster: kafka-cluster-1-to-2
+spec:
+  # NOTE: the Cluster Operator must watch THIS namespace for the CR to be
+  # reconciled — add kafka-mm2 to the OLM OperatorGroup targetNamespaces
+  # (deploy/kafka/00-cluster-operator-olm.yaml) before deploying. The Red Hat
+  # 3.2 guide instead places MM2 in the target cluster's namespace, which is
+  # already watched.
+  replicas: 1
+  # Target cluster — hosts MM2's internal topics and receives the mirrored data
+  target:
+    alias: kafka-cluster-2
+    bootstrapServers: kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9092
+    # Kafka Connect internal topics (required in the v1 API) — created on the target
+    groupId: mm2-connect-cluster
+    configStorageTopic: mm2-configs
+    offsetStorageTopic: mm2-offsets
+    statusStorageTopic: mm2-status
+  mirrors:
+    - source:
+        alias: kafka-cluster-1
+        bootstrapServers: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9092
+        # Empty object = default configuration (Red Hat 3.2 guide, 10.9.1)
+        sourceConnector: {}
+      # Mirror all topics and consumer groups; mirrored resources are prefixed
+      # with the source alias (kafka-cluster-1.<topic>, kafka-cluster-1.<group>)
+      topicsPattern: ".*"
+      groupsPattern: ".*"
+      # (Optional) offset translation for failback/failover — checkpoints
+      # consumer-group offsets from the source to the target (Red Hat 3.2 guide,
+      # 10.9.4 — sync.group.offsets.enabled applies the offsets to the target):
+      # checkpointConnector:
+      #   config:
+      #     sync.group.offsets.enabled: "true"
+      # (Optional) liveness of the source cluster, mirrored as a heartbeat topic:
+      # heartbeatConnector: {}

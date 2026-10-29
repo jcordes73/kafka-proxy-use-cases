@@ -66,6 +66,14 @@
       <groupId>org.apache.camel.quarkus</groupId>
       <artifactId>camel-quarkus-micrometer</artifactId>
     </dependency>
+    <!-- Kafka 4.2 OAuth: the secured OAuthBearerLoginCallbackHandler validates
+         the retrieved JWT client-side and needs jose4j (camel-quarkus-kafka
+         does not pull it in) -->
+    <dependency>
+      <groupId>org.bitbucket.b_c</groupId>
+      <artifactId>jose4j</artifactId>
+      <version>0.9.6</version>
+    </dependency>
   </dependencies>
 
   <build>

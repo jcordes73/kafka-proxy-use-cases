@@ -11,12 +11,14 @@
 #   oc get installplan -n kafka
 #   oc patch installplan <name> -n kafka-auth --type merge -p '{"spec":{"approved":true}}'
 #
-# WATCH SCOPE: the OperatorGroup targets `kafka` (OwnNamespace) initially.
-# When the bridge namespace is created in Step 12, extend the target list —
+# WATCH SCOPE: the OperatorGroup targets the namespaces holding Strimzi-managed
+# resources: the Kafka cluster namespaces (kafka-cluster-1/kafka-cluster-2),
+# this operator namespace (kafka), and the bridge namespace (added in Step 12).
+# When kafka-mm2 is created (MirrorMaker 2, Step 18), extend the target list —
 # the operator deployment is stamped with olm.targetNamespaces and rolls
 # automatically:
 #   oc patch operatorgroup kafka-operator-group -n kafka --type merge \
-#     -p '{"spec":{"targetNamespaces":["kafka","kafka-http-bridge"]}}'
+#     -p '{"spec":{"targetNamespaces":["kafka","kafka-cluster-1","kafka-cluster-2","kafka-http-bridge","kafka-mm2"]}}'
 ---
 apiVersion: v1
 kind: Namespace
@@ -30,11 +32,14 @@ metadata:
   namespace: kafka
 spec:
   # Watch scope covers every namespace holding Strimzi-managed resources:
-  # the Kafka cluster (kafka) and the HTTP bridge (Step 12). Extending this
-  # list is the OLM way to add a watched namespace — OLM regenerates the RBAC
-  # and rolls the operator; no manual RoleBindings needed.
+  # the two Kafka clusters (kafka-cluster-1/kafka-cluster-2), this operator
+  # namespace (kafka), and the HTTP bridge (Step 12). Extending this list is
+  # the OLM way to add a watched namespace — OLM regenerates the RBAC and
+  # rolls the operator; no manual RoleBindings needed.
   targetNamespaces:
     - kafka
+    - kafka-cluster-1
+    - kafka-cluster-2
     - kafka-http-bridge
 ---
 apiVersion: operators.coreos.com/v1alpha1

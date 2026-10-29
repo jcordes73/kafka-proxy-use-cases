@@ -1,0 +1,63 @@
+# deploy/demos/08-token-validation-filters.yaml — Demo 8 (docs/11-demos.md)
+# Token validation at the proxy: OauthBearerValidation verifies each JWT
+# against Keycloak's JWKS endpoint (issuer checks) BEFORE the token reaches the
+# brokers. Invalid/expired/foreign-issuer tokens are rejected at the proxy.
+#
+# Chain: SaslInspection first (also requires authentication), then the
+# existing record-validation filter, then OauthBearerValidation.
+#
+# The JWKS/issuer URLs use the internal http Keycloak service — the SAME
+# endpoint the brokers (deploy/kafka/02-kafka.yaml) and the clients fetch
+# from, so no TLS trust is needed in the proxy. For production, use the
+# Keycloak TLS route and mount its CA into the proxy pods via the KafkaProxy
+# pod template.
+#
+# Apply this file: it REPLACES the kafka-cluster-1 VirtualKafkaCluster from
+# deploy/proxy/05-virtualkafkacluster.yaml. Revert with:
+#   oc apply -f deploy/proxy/05-virtualkafkacluster.yaml
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: sasl-inspection
+  namespace: kafka-proxy
+spec:
+  type: SaslInspection
+  configTemplate:
+    enabledMechanisms: ["OAUTHBEARER"]
+    requireAuthentication: true
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: oauthbearer-validation
+  namespace: kafka-proxy
+spec:
+  type: OauthBearerValidation
+  configTemplate:
+    # Keycloak's JWKS endpoint — the SAME issuer/endpoint the brokers use
+    # (deploy/kafka/02-kafka.yaml oauth.valid.issuer.uri)
+    jwksEndpointUrl: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs
+    expectedIssuer: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: VirtualKafkaCluster
+metadata:
+  name: kafka-cluster-1
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: kafka-cluster-1
+  ingresses:
+    - ingressRef:
+        name: cluster-ip-1
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret
+  filterRefs:
+    - name: sasl-inspection
+    - name: record-validation
+    - name: oauthbearer-validation

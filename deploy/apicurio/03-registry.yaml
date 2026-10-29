@@ -1,0 +1,36 @@
+# deploy/apicurio/03-registry.yaml — Step 17.2 (openshift-setup.md)
+# Apicurio Registry 3 (Red Hat build) with PostgreSQL storage. The proxy's
+# Record Validation filter fetches schemas over the in-cluster HTTP service —
+# no Route needed, so the component ingresses stay disabled. The UI deployment
+# is enabled for browsing schemas from inside the cluster (oc port-forward).
+# The operator-generated NetworkPolicies (allow-all ingress) are disabled —
+# replaced by the DMZ lockdown in 04-netpol-dmz.yaml.
+---
+apiVersion: registry.apicur.io/v1
+kind: ApicurioRegistry3
+metadata:
+  name: apicurio-registry
+  namespace: kafka-registry
+spec:
+  app:
+    replicas: 1
+    ingress:
+      enabled: false
+    networkPolicy:
+      enabled: false
+    storage:
+      type: postgresql
+      sql:
+        dataSource:
+          url: jdbc:postgresql://registry-postgres-db.kafka-registry.svc.cluster.local:5432/apicurioregistry
+          username: registryuser
+          password:
+            name: registry-postgres-db
+            key: password
+  ui:
+    enabled: true
+    replicas: 1
+    ingress:
+      enabled: false
+    networkPolicy:
+      enabled: false

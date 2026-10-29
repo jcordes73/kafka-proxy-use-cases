@@ -1,8 +1,52 @@
 # deploy/console/03-console-metrics.yaml — Step 15 (openshift-setup.md)
-# Scrape the console's own Prometheus metrics. The console app serves them at
-# /metrics on the web port (NOT /q/metrics — the streamshub console operator's
-# own ServiceMonitor uses /q/metrics and an empty selector; it was patched to
-# select only the operator service).
+# Scrape the console app and the console operator for user-workload monitoring.
+#
+# The amq-streams-console OLM operator ships no metrics Service or
+# ServiceMonitor, and the services it creates for the console do not fit
+# scraping as-is:
+#   - kafka-console-console-service exposes only the UI (port 3000), where
+#     /metrics redirects to the sign-in flow — the Prometheus endpoint (200)
+#     is on the console-api container (port 8080), which has no Service.
+#   - the operator serves /q/metrics on port 8080 but has no Service either.
+# So this manifest declares dedicated metrics Services plus ServiceMonitors.
+#
+# NOTE: the operator pod's only stable-ish label embeds the CSV version
+# (app.kubernetes.io/instance: amq-streams-console-operator-v3.2.2-3). After
+# approving an operator upgrade, update the console-operator-metrics Service
+# selector to the new deployment's instance label.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kafka-console-metrics
+  name: kafka-console-metrics
+  namespace: kafka-console
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: kafka-console-console-deployment
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: console-operator-metrics
+  name: console-operator-metrics
+  namespace: kafka-console
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: amq-streams-console-operator-v3.2.2-3
+---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -11,7 +55,20 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: kafka-console
+      app: kafka-console-metrics
   endpoints:
     - port: http
       path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: console-operator-metrics
+  namespace: kafka-console
+spec:
+  selector:
+    matchLabels:
+      app: console-operator-metrics
+  endpoints:
+    - port: http
+      path: /q/metrics

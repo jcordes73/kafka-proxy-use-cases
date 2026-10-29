@@ -1,49 +1,52 @@
-# deploy/kafka/03-kafka-netpol-dmz.yaml — Step 0.4 (openshift-setup.md)
-# DMZ lockdown for the Kafka cluster: default-deny + same-namespace +
+# deploy/kafka/03-kafka-netpol-dmz.yaml — Step 0.4 (docs/01-kafka-cluster.md)
+# DMZ lockdown for both Kafka clusters: default-deny + same-namespace +
 # proxy-namespace-only on the client-facing listener ports (9092/9093).
 # NOTE: In Strimzi 0.51 the listener ports are additionally governed by the
-# operator-generated my-cluster-network-policy-kafka — hence the per-listener
-# networkPolicyPeers in 02-kafka.yaml must match this intent.
+# operator-generated <cluster-name>-network-policy-kafka — hence the
+# per-listener networkPolicyPeers in 02-kafka.yaml must match this intent.
 ---
-# 1. Default deny: no ingress to Kafka pods at all
+# 1. Default deny: no ingress to the kafka-cluster-1 pods at all
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: my-cluster-deny-ingress
-  namespace: kafka
+  name: kafka-cluster-1-deny-ingress
+  namespace: kafka-cluster-1
 spec:
   podSelector:
     matchLabels:
-      strimzi.io/cluster: my-cluster
+      strimzi.io/cluster: kafka-cluster-1
   policyTypes:
     - Ingress
   ingress: []
 ---
-# 2. Allow all traffic from within the kafka namespace
+# 2. Allow all traffic from within the kafka-cluster-1 namespace
 #    (control plane 9091, broker replication, Cluster/Entity Operator)
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: my-cluster-allow-same-namespace
-  namespace: kafka
+  name: kafka-cluster-1-allow-same-namespace
+  namespace: kafka-cluster-1
 spec:
   podSelector:
     matchLabels:
-      strimzi.io/cluster: my-cluster
+      strimzi.io/cluster: kafka-cluster-1
   ingress:
     - from:
-        - podSelector: {}   # any pod in the kafka namespace
+        - podSelector: {}   # any pod in the kafka-cluster-1 namespace
 ---
-# 3. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports
+# 3. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports.
+#    MirrorMaker 2 (Step 18, kafka-mm2) additionally reaches the PLAIN listener
+#    only — it replicates between the two clusters over the unauthenticated
+#    plain listener (see docs/10-mirrormaker2.md).
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: my-cluster-allow-proxy
-  namespace: kafka
+  name: kafka-cluster-1-allow-proxy
+  namespace: kafka-cluster-1
 spec:
   podSelector:
     matchLabels:
-      strimzi.io/cluster: my-cluster
+      strimzi.io/cluster: kafka-cluster-1
   ingress:
     - from:
         - namespaceSelector:
@@ -53,4 +56,70 @@ spec:
         - port: 9092
           protocol: TCP
         - port: 9093
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-mm2
+      ports:
+        - port: 9092
+          protocol: TCP
+---
+# 4. Default deny: no ingress to the kafka-cluster-2 pods at all
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: kafka-cluster-2-deny-ingress
+  namespace: kafka-cluster-2
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: kafka-cluster-2
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+# 5. Allow all traffic from within the kafka-cluster-2 namespace
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: kafka-cluster-2-allow-same-namespace
+  namespace: kafka-cluster-2
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: kafka-cluster-2
+  ingress:
+    - from:
+        - podSelector: {}   # any pod in the kafka-cluster-2 namespace
+---
+# 6. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports.
+#    MirrorMaker 2 (Step 18, kafka-mm2) additionally reaches the PLAIN listener
+#    only — it replicates between the two clusters over the unauthenticated
+#    plain listener (see docs/10-mirrormaker2.md).
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: kafka-cluster-2-allow-proxy
+  namespace: kafka-cluster-2
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: kafka-cluster-2
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-proxy
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 9093
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-mm2
+      ports:
+        - port: 9092
           protocol: TCP

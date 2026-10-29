@@ -1,0 +1,63 @@
+# deploy/demos/07-entity-isolation.yaml — Demo 7 (docs/11-demos.md)
+# Entity Isolation (preview, new in 3.2): each authenticated principal gets a
+# private namespace for consumer groups and transactional IDs within the shared
+# cluster. Two principals using the SAME group name see two distinct groups on
+# the brokers — the filter maps names transparently
+# (cluster-visible name = <principal>-<client-visible-name>).
+#
+# Requires the authenticated subject: SaslInspection first in the chain.
+# EntityIsolation supports GROUP_ID and TRANSACTIONAL_ID only (topic name
+# isolation is not yet supported — kroxylicious#3504).
+#
+# Apply this file: it REPLACES the kafka-cluster-1 VirtualKafkaCluster from
+# deploy/proxy/05-virtualkafkacluster.yaml. Revert with:
+#   oc apply -f deploy/proxy/05-virtualkafkacluster.yaml
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: sasl-inspection
+  namespace: kafka-proxy
+spec:
+  type: SaslInspection
+  configTemplate:
+    enabledMechanisms: ["OAUTHBEARER"]
+    requireAuthentication: true
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: entity-isolation
+  namespace: kafka-proxy
+spec:
+  type: EntityIsolation
+  configTemplate:
+    entityTypes:
+      - GROUP_ID
+      - TRANSACTIONAL_ID
+    mapper: PrincipalEntityNameMapperService
+    mapperConfig:
+      # cluster-visible name = <principal><separator><client-visible-name>
+      separator: "-"
+      principalType: io.kroxylicious.proxy.authentication.User
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: VirtualKafkaCluster
+metadata:
+  name: kafka-cluster-1
+  namespace: kafka-proxy
+spec:
+  proxyRef:
+    name: simple
+  targetKafkaServiceRef:
+    name: kafka-cluster-1
+  ingresses:
+    - ingressRef:
+        name: cluster-ip-1
+      tls:
+        certificateRef:
+          name: proxy-tls
+          kind: Secret
+  filterRefs:
+    - name: sasl-inspection
+    - name: entity-isolation

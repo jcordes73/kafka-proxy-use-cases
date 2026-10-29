@@ -33,7 +33,31 @@ metadata:
   namespace: kafka-http-bridge
 spec:
   replicas: 1
-  bootstrapServers: my-cluster-cluster-ip-bootstrap.kafka-proxy.svc.cluster.local:9292
+  # Mirrors deploy/bridge/01-kafka-bridge.yaml (Step 12.2) + metricsConfig —
+  # do not trim the TLS/authentication settings or applying this manifest
+  # reverts the bridge to an unauthenticated, wrong-bootstrap state.
+  bootstrapServers: kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292
+  tls:
+    trustedCertificates:
+      - secretName: proxy-ca
+        certificate: ca.crt
+  authentication:
+    type: custom
+    sasl: true
+    config:
+      sasl.mechanism: OAUTHBEARER
+      sasl.jaas.config: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required oauth.token.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token";
+      sasl.login.callback.handler.class: io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
+  template:
+    bridgeContainer:
+      env:
+        - name: OAUTH_CLIENT_ID
+          value: kafka-bridge
+        - name: OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: kafka-bridge-oauth
+              key: client-secret
   http:
     port: 8080
   metricsConfig:
