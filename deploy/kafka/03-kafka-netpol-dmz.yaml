@@ -1,5 +1,6 @@
-# deploy/kafka/03-kafka-netpol-dmz.yaml — Step 0.4 (docs/01-kafka-cluster.md)
-# DMZ lockdown for both Kafka clusters: default-deny + same-namespace +
+# deploy/kafka/03-kafka-netpol-dmz.yaml — Step 3.4 (docs/03-kafka-cluster.md)
+# Backend lockdown (the DMZ/backend split) for both Kafka clusters:
+# default-deny + same-namespace +
 # proxy-namespace-only on the client-facing listener ports (9092/9093).
 # NOTE: In Strimzi 0.51 the listener ports are additionally governed by the
 # operator-generated <cluster-name>-network-policy-kafka — hence the
@@ -35,9 +36,9 @@ spec:
         - podSelector: {}   # any pod in the kafka-cluster-1 namespace
 ---
 # 3. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports.
-#    MirrorMaker 2 (Step 18, kafka-mm2) additionally reaches the PLAIN listener
+#    MirrorMaker 2 (Step 4, kafka-mm2) additionally reaches the PLAIN listener
 #    only — it replicates between the two clusters over the unauthenticated
-#    plain listener (see docs/10-mirrormaker2.md).
+#    plain listener (see docs/04-mirrormaker2.md).
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -94,9 +95,9 @@ spec:
         - podSelector: {}   # any pod in the kafka-cluster-2 namespace
 ---
 # 6. DMZ ingress: only the kafka-proxy namespace, only on client-facing ports.
-#    MirrorMaker 2 (Step 18, kafka-mm2) additionally reaches the PLAIN listener
+#    MirrorMaker 2 (Step 4, kafka-mm2) additionally reaches the PLAIN listener
 #    only — it replicates between the two clusters over the unauthenticated
-#    plain listener (see docs/10-mirrormaker2.md).
+#    plain listener (see docs/04-mirrormaker2.md).
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:

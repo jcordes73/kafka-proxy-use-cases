@@ -1,10 +1,10 @@
-# deploy/bridge/01-kafka-bridge.yaml — Step 12.2 (docs/04-http-bridge.md)
+# deploy/bridge/01-kafka-bridge.yaml — Step 7.2 (docs/07-http-bridge.md)
 # The bridge is a plain Kafka client of the VIRTUAL cluster: bootstrapServers
 # points at the proxy's clusterIP bootstrap, so HTTP traffic flows through the
 # proxy and the DMZ stays intact. The virtual cluster ingress speaks TLS
-# (SNI, guide Step 5) — tls.trustedCertificates makes the bridge trust the
-# proxy's CA (Secret created in Step 12.2). The proxied tls listener requires
-# SASL/OAUTHBEARER (Step 0.2): the bridge authenticates with the Strimzi OAuth
+# (SNI, guide Step 6.4) — tls.trustedCertificates makes the bridge trust the
+# proxy's CA (Secret created in Step 7.2). The proxied tls listener requires
+# SASL/OAUTHBEARER (Step 3.2): the bridge authenticates with the Strimzi OAuth
 # client handler (bundled in the bridge image), obtaining tokens from the
 # kafka-bridge Keycloak client via client_credentials. The OAUTH_CLIENT_SECRET
 # env comes from a Secret created in the guide (the realm import does not

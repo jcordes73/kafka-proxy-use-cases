@@ -1,12 +1,16 @@
-# Streams for Apache Kafka Proxy (kafka-proxy namespace)
+# Step 6: Deploy the Streams for Apache Kafka Proxy (kafka-proxy namespace)
 
-> [↑ Setup overview](../openshift-setup.md) · prev: [Step 1: Keycloak (kafka-auth)](02-keycloak.md) · next: [Step 12: HTTP Bridge](04-http-bridge.md)
+> [↑ Setup overview](../openshift-setup.md) · prev: [Step 5: Apicurio Registry](05-apicurio-registry.md) · next: [Step 7: HTTP Bridge](07-http-bridge.md)
 
-Steps 2–11 of the setup guide: install the proxy operator, understand the
-custom resources, create the proxy / ingress / backend cluster / virtual cluster,
-wire TLS and DNS, and verify the virtual cluster end to end.
+This step covers the whole proxy deployment in subsections 6.1–6.10: install the
+operator, understand the custom resources, create the proxy / ingress / backend
+cluster / virtual cluster, wire TLS and DNS, and verify the virtual cluster end to end.
 
-## Step 2: Install the Proxy Operator
+> **Placement:** the proxy runs in the **DMZ** (`kafka-proxy`) — it is the only door into the
+> Kafka clusters, which sit in the **secure backend** (`kafka-cluster-1`/`kafka-cluster-2`) and
+> accept Kafka-protocol connections from the proxy namespace only ([Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz)).
+
+## 6.1 — Install the Proxy Operator
 
 ### Recommended: upstream release artifacts (as deployed here)
 
@@ -91,7 +95,7 @@ oc wait --for=jsonpath='{.status.phase}'=Succeeded csv --all -n kafka-proxy --ti
 
 The rest of this guide works identically regardless of install method.
 
-## Step 3: Understand the Custom Resources
+## 6.2 — Understand the Custom Resources
 
 The operator consumes these custom resources (API version `kroxylicious.io/v1alpha1`) and generates the OpenShift `Deployment`, `Service`, and `ConfigMap` resources that run the proxy:
 
@@ -106,11 +110,11 @@ The operator consumes these custom resources (API version `kroxylicious.io/v1alp
 
 > The API is deliberately decomposed (similar to the Kubernetes Gateway API), so you can use RBAC to split responsibility — e.g., network teams own `KafkaProxy`/`KafkaProxyIngress`, application teams own `VirtualKafkaCluster`/`KafkaService`/`KafkaProtocolFilter`.
 
-## Step 4: Create the KafkaProxy Resource
+## 6.3 — Create the KafkaProxy Resource
 
 A `KafkaProxy` is the top-level resource linking everything together — an empty `spec` creates a proxy with default configuration. The ready-to-apply manifest is [`deploy/proxy/02-kafkaproxy.yaml`](../deploy/proxy/02-kafkaproxy.yaml) (`name: simple`, `namespace: kafka-proxy`, `spec: {}`).
 
-## Step 5: Choose and Create an Ingress
+## 6.4 — Choose and Create an Ingress
 
 A `KafkaProxyIngress` defines how clients reach the virtual cluster. It belongs to one `KafkaProxy` (via `proxyRef`) but can be shared by multiple virtual clusters.
 
@@ -154,7 +158,7 @@ spec:
 
 > TLS is recommended for production connections. `loadBalancer` and `openShiftRoute` support TLS only.
 
-## Step 6: Define the Backend Cluster (KafkaService)
+## 6.5 — Define the Backend Cluster (KafkaService)
 
 The `KafkaService` describes the upstream Kafka cluster. Declare the full range of broker node IDs. The ready-to-apply manifest is [`deploy/proxy/04-kafkaservice.yaml`](../deploy/proxy/04-kafkaservice.yaml) — one `KafkaService` per backend cluster (`kafka-cluster-1` and `kafka-cluster-2`), each using `strimziKafkaRef` to discover the bootstrap address from the Strimzi `Kafka` CR's status and `trustStrimziCaCertificate: true` to auto-trust the cluster CA (no hardcoded bootstrap, no copied CA):
 
@@ -166,9 +170,9 @@ Field notes (full manifests in the deploy file):
 
 - `spec.strimziKafkaRef` — `name`/`namespace` of the Strimzi `Kafka` resource and the `listenerName: tls` to connect over (requires Strimzi 0.49+; specify either `strimziKafkaRef` or `bootstrapServers`, not both).
 - `spec.tls.trustAnchorRef` — for non-Strimzi clusters; accepts a `Secret`, and the operator can auto-trust the Strimzi-generated CA anchor for Streams-managed clusters.
-- `nodeIdRanges` must cover **all** broker node IDs in the target cluster (`start` and `end` inclusive) — `0`–`2` for the cluster deployed in [Step 0](01-kafka-cluster.md#step-0-deploy-the-kafka-cluster-streams-for-apache-kafka). For an external cluster, use `bootstrapServers` with its reachable address instead.
+- `nodeIdRanges` must cover **all** broker node IDs in the target cluster (`start` and `end` inclusive) — `0`–`2` for the cluster deployed in [Step 3](03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka). For an external cluster, use `bootstrapServers` with its reachable address instead.
 
-## Step 7: (Optional) Add a Filter
+## 6.6 — (Optional) Add a Filter
 
 A `KafkaProtocolFilter` is reusable across virtual clusters in the same namespace. `spec.type` names the filter implementation and `spec.configTemplate` carries the configuration (subject to operator interpolation):
 
@@ -192,18 +196,18 @@ spec:
 
 Start with **no filters** to validate basic connectivity, then add one at a time. See the [use case catalog](../README.md#use-case-catalog) for Record Encryption and Record Validation configuration.
 
-## Step 8: Create the VirtualKafkaCluster
+## 6.7 — Create the VirtualKafkaCluster
 
 The `VirtualKafkaCluster` wires everything together. All referenced resources must be in the same namespace. Filter order matters: client requests pass through filters from index `0` to `n`; broker responses pass through in reverse order. An empty/omitted `filterRefs` passes traffic through unchanged.
 
-The ready-to-apply manifest is [`deploy/proxy/05-virtualkafkacluster.yaml`](../deploy/proxy/05-virtualkafkacluster.yaml) — **one virtual cluster per backend cluster** (`kafka-cluster-1` and `kafka-cluster-2`), each wiring `proxyRef: simple`, its `targetKafkaServiceRef`, its own `clusterIP` ingress (`cluster-ip-1` / `cluster-ip-2` with a shared TLS `certificateRef: proxy-tls`, applied in [Step 9](#step-9-tls-certificates)), and `filterRefs` — `[record-validation]` on `kafka-cluster-1` (created in [Step 17](09-apicurio-registry.md#step-17-deploy-apicurio-registry-and-validate-records-record-validation); if you are running strictly in order, remove that ref until Step 17) and none on `kafka-cluster-2` (traffic passes through unchanged):
+The ready-to-apply manifest is [`deploy/proxy/05-virtualkafkacluster.yaml`](../deploy/proxy/05-virtualkafkacluster.yaml) — **one virtual cluster per backend cluster** (`kafka-cluster-1` and `kafka-cluster-2`), each wiring `proxyRef: simple`, its `targetKafkaServiceRef`, its own `clusterIP` ingress (`cluster-ip-1` / `cluster-ip-2` with a shared TLS `certificateRef: proxy-tls`, applied in [Step 6.8](#68--tls-certificates)), and `filterRefs` — `[record-validation]` on `kafka-cluster-1` (created in [Step 5](05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation); if you are running strictly in order, remove that ref until Step 5) and none on `kafka-cluster-2` (traffic passes through unchanged):
 
 ```bash
 oc apply -f deploy/proxy/02-kafkaproxy.yaml -f deploy/proxy/03-kafkaproxyingress.yaml \
   -f deploy/proxy/04-kafkaservice.yaml -f deploy/proxy/05-virtualkafkacluster.yaml
 ```
 
-## Step 9: TLS Certificates
+## 6.8 — TLS Certificates
 
 TLS ingress types need a server certificate provided as a `Secret` of type `kubernetes.io/tls`:
 
@@ -252,7 +256,7 @@ oc get ingresscontrollers.operator.openshift.io -n openshift-ingress-operator de
 > kafka-cluster-1-cluster-ip-1-2.kafka-proxy.svc.cluster.local
 > ```
 
-## Step 10: DNS for Off-Cluster Ingress
+## 6.9 — DNS for Off-Cluster Ingress
 
 **`openShiftRoute`**: nothing to do — OpenShift assigns the hostnames.
 
@@ -281,9 +285,9 @@ oc get ingresscontrollers.operator.openshift.io -n openshift-ingress-operator de
    nslookup broker-0.my-cluster.kafkaproxy.example.com
    ```
 
-## Step 11: Apply and Verify
+## 6.10 — Apply and Verify
 
-1. Apply the resources (order doesn't strictly matter — the operator reconciles references). The ready-to-apply manifests are in [`deploy/proxy/`](../deploy/proxy) (Steps 4 and 8 above):
+1. Apply the resources (order doesn't strictly matter — the operator reconciles references). The ready-to-apply manifests are in [`deploy/proxy/`](../deploy/proxy) (Steps 6.3 and 6.7 above):
 
    ```bash
    oc apply -f deploy/proxy/02-kafkaproxy.yaml -f deploy/proxy/03-kafkaproxyingress.yaml \
@@ -329,7 +333,7 @@ oc get ingresscontrollers.operator.openshift.io -n openshift-ingress-operator de
 
    - `loadBalancer` / `openShiftRoute`: the bootstrap address from your DNS/Route configuration.
 
-5. **Smoke-test end-to-end (plain TCP)** from inside the cluster with a Kafka CLI pod (for ingresses **without** TLS — for TLS ingresses use step 6). The proxied listener authenticates with SASL/OAUTHBEARER (the only mechanism on the `tls` listener — see Step 0.2), so even a plain-TCP client must authenticate with a token — the proxy relays the SASL/OAUTHBEARER exchange to the brokers. `kcat`/librdkafka cannot fetch OAuth tokens on its own, so use the Kafka CLI with the native OAuth handler:
+5. **Smoke-test end-to-end (plain TCP)** from inside the cluster with a Kafka CLI pod (for ingresses **without** TLS — for TLS ingresses use step 10). The proxied listener authenticates with SASL/OAUTHBEARER (the only mechanism on the `tls` listener — see Step 3.2), so even a plain-TCP client must authenticate with a token — the proxy relays the SASL/OAUTHBEARER exchange to the brokers. `kcat`/librdkafka cannot fetch OAuth tokens on its own, so use the Kafka CLI with the native OAuth handler:
 
    ```bash
    # 1. Create the Secret for the demo-client (the realm import does not create Secrets)

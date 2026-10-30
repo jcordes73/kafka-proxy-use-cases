@@ -1,4 +1,4 @@
-# deploy/apicurio/01-subscription.yaml — Step 17.1 (openshift-setup.md)
+# deploy/apicurio/01-subscription.yaml — Step 5.1 (openshift-setup.md)
 # Namespace + OperatorGroup + Subscription for the Red Hat build of Apicurio
 # Registry operator (package apicurio-registry-3), applied as a single
 # transaction (the OperatorGroup must exist when the Subscription is validated).

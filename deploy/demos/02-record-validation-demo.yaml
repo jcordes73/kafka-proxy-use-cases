@@ -1,16 +1,16 @@
-# deploy/apicurio/05-record-validation-demo.yaml — Step 17.4 (openshift-setup.md)
+# deploy/demos/02-record-validation-demo.yaml — Demo scenarios, Demo 2 (docs/11-demos.md)
 # Record Validation demo: a dedicated topic plus the KafkaProtocolFilter that
 # validates record values against the JSON schema registered in Apicurio
-# Registry (Step 17.3). The rule is scoped to the demo topic only — other
+# Registry (Step 5.4). The rule is scoped to the demo topic only — other
 # topics pass through unvalidated (no defaultRule).
 #
 # NOTE: the filter rejects produce requests with non-conforming values before
 # they reach the broker. Remove the filterRef from the virtual cluster
-# (Step 17.6) to disable validation.
+# (Demo 2) to disable validation.
 #
 # apicurioId is the schema's contentId from the registry — filled in after
-# registering the schema (Step 17.3). Apply through envsubst:
-#   envsubst < 05-record-validation-demo.yaml | oc apply -f -
+# registering the schema (Step 5.4). Apply through envsubst:
+#   envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic

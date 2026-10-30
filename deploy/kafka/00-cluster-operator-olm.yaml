@@ -1,4 +1,4 @@
-# deploy/kafka/00-cluster-operator-olm.yaml — Step 0.1 (openshift-setup.md)
+# deploy/kafka/00-cluster-operator-olm.yaml — Step 3.1 (openshift-setup.md)
 # Streams for Apache Kafka Cluster Operator, installed via OperatorHub/OLM
 # (the Red Hat downstream operator — the guide's recommended install files
 # path requires a subscription download; on OperatorHub-enabled clusters this
@@ -13,8 +13,8 @@
 #
 # WATCH SCOPE: the OperatorGroup targets the namespaces holding Strimzi-managed
 # resources: the Kafka cluster namespaces (kafka-cluster-1/kafka-cluster-2),
-# this operator namespace (kafka), and the bridge namespace (added in Step 12).
-# When kafka-mm2 is created (MirrorMaker 2, Step 18), extend the target list —
+# this operator namespace (kafka), and the bridge namespace (added in Step 7).
+# When kafka-mm2 is created (MirrorMaker 2, Step 4), extend the target list —
 # the operator deployment is stamped with olm.targetNamespaces and rolls
 # automatically:
 #   oc patch operatorgroup kafka-operator-group -n kafka --type merge \
@@ -33,7 +33,7 @@ metadata:
 spec:
   # Watch scope covers every namespace holding Strimzi-managed resources:
   # the two Kafka clusters (kafka-cluster-1/kafka-cluster-2), this operator
-  # namespace (kafka), and the HTTP bridge (Step 12). Extending this list is
+  # namespace (kafka), and the HTTP bridge (Step 7). Extending this list is
   # the OLM way to add a watched namespace — OLM regenerates the RBAC and
   # rolls the operator; no manual RoleBindings needed.
   targetNamespaces:

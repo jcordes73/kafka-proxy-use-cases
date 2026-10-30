@@ -1,10 +1,14 @@
-# deploy/apicurio/03-registry.yaml — Step 17.2 (openshift-setup.md)
-# Apicurio Registry 3 (Red Hat build) with PostgreSQL storage. The proxy's
-# Record Validation filter fetches schemas over the in-cluster HTTP service —
-# no Route needed, so the component ingresses stay disabled. The UI deployment
-# is enabled for browsing schemas from inside the cluster (oc port-forward).
-# The operator-generated NetworkPolicies (allow-all ingress) are disabled —
-# replaced by the DMZ lockdown in 04-netpol-dmz.yaml.
+# deploy/apicurio/03-registry.yaml — Step 5.2 (openshift-setup.md)
+# Apicurio Registry 3 (Red Hat build) with PostgreSQL storage. The app and UI
+# components are exposed via operator-managed Ingress (Routes on the cluster
+# domain) and authenticated against Keycloak (Step 2): the backend validates
+# bearer tokens via JWKS, the UI does the browser login (registry-ui client).
+# anonymousReadsEnabled keeps the DMZ proxy's Record Validation schema fetch
+# working (read-only, unauthenticated). The OIDC connection trusts Keycloak's
+# self-signed cert via the keycloak-oidc-truststore Secret (ca.p12, built from
+# keycloak-tls-secret). The operator-generated NetworkPolicies (allow-all
+# ingress) are disabled — replaced by the DMZ lockdown in 04-netpol-dmz.yaml
+# (proxy + openshift-ingress on the REST port). Apply through envsubst:
 ---
 apiVersion: registry.apicur.io/v1
 kind: ApicurioRegistry3
@@ -15,9 +19,33 @@ spec:
   app:
     replicas: 1
     ingress:
-      enabled: false
+      enabled: true
+      host: registry-app.${OPENSHIFT_APPS_DOMAIN}
+      ingressClassName: openshift-default
+      # edge TLS at the OpenShift router (the app pod stays plain HTTP on 8080;
+      # without this the Route is HTTP-only and HTTPS answers the router's 503)
+      annotations:
+        route.openshift.io/termination: edge
     networkPolicy:
       enabled: false
+    auth:
+      enabled: true
+      authServerUrl: https://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}/realms/kafka
+      appClientId: registry-api
+      uiClientId: registry-ui
+      redirectUri: https://registry-ui.${OPENSHIFT_APPS_DOMAIN}
+      anonymousReadsEnabled: true
+      # role-based authorization: sr-admin = full access (kafka-admin user +
+      # the registry-api service account); readAccessEnabled lets any
+      # authenticated user read; anonymous reads stay open for the proxy.
+      authz:
+        enabled: true
+        readAccessEnabled: true
+      tls:
+        truststoreSecretRef:
+          name: keycloak-oidc-truststore
+        truststorePasswordSecretRef:
+          name: keycloak-oidc-truststore
     storage:
       type: postgresql
       sql:
@@ -31,6 +59,10 @@ spec:
     enabled: true
     replicas: 1
     ingress:
-      enabled: false
+      enabled: true
+      host: registry-ui.${OPENSHIFT_APPS_DOMAIN}
+      ingressClassName: openshift-default
+      annotations:
+        route.openshift.io/termination: edge
     networkPolicy:
       enabled: false

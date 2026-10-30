@@ -1,4 +1,4 @@
-# deploy/proxy/03-kafkaproxyingress.yaml — Step 5 (docs/03-proxy.md)
+# deploy/proxy/03-kafkaproxyingress.yaml — Step 6.4 (docs/06-proxy.md)
 # clusterIP ingresses with TLS: on-cluster clients reach a virtual cluster over
 # a ClusterIP Service speaking TLS. The proxy terminates TLS on ONE shared SNI
 # port — SNI identifies the virtual cluster and broker, so any number of TLS

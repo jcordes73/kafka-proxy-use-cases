@@ -1,8 +1,8 @@
-# deploy/camel/consumer/01-deployment.yaml — Step 14.4 (docs/06-camel-clients.md)
+# deploy/camel/consumer/01-deployment.yaml — Step 9.4 (docs/09-camel-clients.md)
 # Consumer THROUGH the proxy (CAMEL_COMPONENT_KAFKA_BROKERS overrides
-# camel.component.kafka.brokers — guide Step 14.3; port is operator-allocated).
-# The virtual cluster ingress speaks TLS (guide Step 5): the proxy CA is
-# mounted as a PEM trust store (Step 14.4).
+# camel.component.kafka.brokers — guide Step 9.3; port is operator-allocated).
+# The virtual cluster ingress speaks TLS (guide Step 6.4): the proxy CA is
+# mounted as a PEM trust store (Step 9.4).
 # SASL/OAUTHBEARER: the JAAS/saslAuthType config in application.properties uses
 # the camel-consumer Keycloak client — OAUTH_CLIENT_SECRET is injected here from
 # a Secret created in the guide. Kafka 4.x rejects http token endpoints unless
@@ -40,7 +40,7 @@ spec:
             # TLS + SASL options (saslAuthType, oauthTokenEndpointUri etc.) are camelCase
             # component options — they cannot be expressed as CAMEL_COMPONENT_KAFKA_*
             # env vars (underscore mapping would produce the invalid "security.protocol"),
-            # so they are set in the image's application.properties (Step 14.3); only the
+            # so they are set in the image's application.properties (Step 9.3); only the
             # CA mount and the OAuth secret live here.
           volumeMounts:
             - name: proxy-ca

@@ -1,9 +1,9 @@
-# deploy/bridge/02-bridge-netpol-dmz.yaml — Step 12.5 (openshift-setup.md)
+# deploy/bridge/02-bridge-netpol-dmz.yaml — Step 7.5 (openshift-setup.md)
 # DMZ for the bridge's unauthenticated HTTP API: default deny + same-namespace
 # + your API layer/gateway namespace, only on the HTTP port.
 # NOTE: ingress-only — the bridge can still connect to the proxy's bootstrap.
 ---
-# The stand-in API-layer namespace used by the Step 12 verification below
+# The stand-in API-layer namespace used by the Step 7 verification below
 # (replace with your real API namespace in production).
 apiVersion: v1
 kind: Namespace

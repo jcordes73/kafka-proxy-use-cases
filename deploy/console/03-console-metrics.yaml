@@ -1,4 +1,4 @@
-# deploy/console/03-console-metrics.yaml — Step 15 (openshift-setup.md)
+# deploy/console/03-console-metrics.yaml — Step 1 (openshift-setup.md)
 # Scrape the console app and the console operator for user-workload monitoring.
 #
 # The amq-streams-console OLM operator ships no metrics Service or

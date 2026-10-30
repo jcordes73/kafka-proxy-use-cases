@@ -1,4 +1,4 @@
-# deploy/console/01-console-operator.yaml — Step 13.1 (openshift-setup.md)
+# deploy/console/01-console-operator.yaml — Step 8.1 (openshift-setup.md)
 # Namespace + OperatorGroup + Subscription for the Streams for Apache Kafka
 # Console operator (package amq-streams-console, Red Hat Operators catalog),
 # applied as a single transaction.

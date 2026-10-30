@@ -1,4 +1,4 @@
-# deploy/observability/05-kafka-stack-alerts.yaml — Step 15.9 (openshift-setup.md)
+# deploy/observability/05-kafka-stack-alerts.yaml — Step 1.9 (openshift-setup.md)
 # Minimal alert rules picked up by the user-workload Prometheus. Rules are
 # component-specific; Prometheus evaluates them against metrics from any
 # namespace, so a single rule file per concern is fine (broker rules could

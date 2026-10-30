@@ -1,4 +1,4 @@
-# deploy/observability/03-proxy-podmonitors.yaml — Step 15.4 (openshift-setup.md)
+# deploy/observability/03-proxy-podmonitors.yaml — Step 1.4 (openshift-setup.md)
 # Scrape the proxy's management port (9190) and the operator's metrics port.
 # Operator pod selector matches this install's labels (app=kroxylicious);
 # with the downstream operator, use the guide's app.kubernetes.io/* labels.

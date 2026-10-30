@@ -38,8 +38,12 @@ Its core idea is the **filter mechanism**: additional behavior is injected into 
 ```mermaid
 flowchart LR
     subgraph openshift["OpenShift cluster"]
-        P["Streams for Apache Kafka Proxy<br/>(virtual clusters,<br/>filters, TLS)"]
-        K["Kafka cluster<br/>(Streams for Apache Kafka<br/>or any Kafka-protocol cluster)"]
+        subgraph dmzUC["DMZ"]
+            P["Streams for Apache Kafka Proxy<br/>(virtual clusters,<br/>filters, TLS)"]
+        end
+        subgraph backendUC["Secure backend"]
+            K["Kafka cluster<br/>(Streams for Apache Kafka<br/>or any Kafka-protocol cluster)"]
+        end
     end
     Producers["Producers"] --> P
     Consumers["Consumers"] --> P
@@ -50,7 +54,7 @@ Because clients and brokers are both unaware of the proxy's transformations, ado
 
 ## Architecture at a Glance
 
-The full-stack deployment pattern (see the [complete diagram in openshift-setup.md](openshift-setup.md#the-architecture-youll-deploy)) — the whole stack runs on OpenShift, with each component in its own namespace for logical separation. The DMZ spans the `kafka-cluster-1` and `kafka-cluster-2` namespaces (brokers, ingress only from the proxy — plus the optional `kafka-mm2` replication plane on the plain listener), `kafka-http-bridge` (the exposed Kafka Bridge, locked down by its own NetworkPolicy), and `kafka-registry` (Apicurio Registry, reachable only by the proxy — see [Step 17](docs/09-apicurio-registry.md#step-17-deploy-apicurio-registry-and-validate-records-record-validation)):
+The full-stack deployment pattern (see the [complete diagram in openshift-setup.md](openshift-setup.md#the-architecture-youll-deploy)) — the whole stack runs on OpenShift, with each component in its own namespace for logical separation. The **DMZ** holds the client-facing entry points — the `kafka-proxy` namespace (the proxy is the single Kafka-protocol door into the backend) and `kafka-http-bridge` (the exposed Kafka Bridge — also in the DMZ, locked down by its own NetworkPolicy). The **secure backend** holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces, ingress only from the proxy (plus the optional `kafka-mm2` replication plane — also in the secure backend — on the plain listener) — and `kafka-registry` (Apicurio Registry, reachable only by the proxy — see [Step 5](docs/05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation)):
 
 ```mermaid
 flowchart LR
@@ -58,7 +62,7 @@ flowchart LR
     H["HTTP clients (REST)"]
     U["Browser (OIDC)"]
     subgraph openshift["OpenShift cluster — logical separation via namespaces"]
-        subgraph proxyNs["namespace: kafka-proxy"]
+        subgraph proxyNs["namespace: kafka-proxy — DMZ"]
             P["Kafka Proxy<br/>(virtual clusters + filters)"]
         end
         subgraph bridgeNs["namespace: kafka-http-bridge — DMZ"]
@@ -67,20 +71,20 @@ flowchart LR
         subgraph consoleNs["namespace: kafka-console"]
             C["Console UI"]
         end
-        subgraph kafkaNs1["namespace: kafka-cluster-1 — DMZ"]
-            K["Kafka cluster-1<br/>(only the proxy may<br/>reach the brokers)"]
+        subgraph kafkaNs1["namespace: kafka-cluster-1 — secure backend (locked down)"]
+            K["Kafka cluster-1<br/>(backend — only the proxy may<br/>reach the brokers)"]
         end
-        subgraph kafkaNs2["namespace: kafka-cluster-2 — DMZ"]
+        subgraph kafkaNs2["namespace: kafka-cluster-2 — secure backend"]
             K2["Kafka cluster-2<br/>(replication target)"]
         end
-        subgraph mm2Ns["namespace: kafka-mm2 (optional)"]
+        subgraph mm2Ns["namespace: kafka-mm2 — secure backend (replication, optional)"]
             M["MirrorMaker 2"]
         end
         subgraph authNs["namespace: kafka-auth"]
             KC["Red Hat build of Keycloak"]
         end
-        subgraph registryNs["namespace: kafka-registry — DMZ"]
-            R["Apicurio Registry 3<br/>(schema store)"]
+        subgraph registryNs["namespace: kafka-registry — secure backend"]
+            R["Apicurio Registry 3<br/>(schema store, reachable<br/>only by the proxy)"]
         end
         subgraph producerNs["namespace: kafka-producer"]
             direction TB
@@ -181,7 +185,7 @@ Rules are applied per topic (`topicNames`) with optional `defaultRule` fallback,
 
 **Good fit when:** you want producer-side contract enforcement at the cluster edge — before bad data lands, not after.
 
-> 🧪 **Live demo in this repo:** the reference deployment includes Apicurio Registry (Red Hat build, 3.x) in a `kafka-registry` namespace and a schema-validated demo topic — invalid records are rejected at the proxy with `Broker: Broker failed to validate record`. See [Step 17](docs/09-apicurio-registry.md#step-17-deploy-apicurio-registry-and-validate-records-record-validation).
+> 🧪 **Live demo in this repo:** the reference deployment includes Apicurio Registry (Red Hat build, 3.x) in a `kafka-registry` namespace and a schema-validated demo topic — invalid records are rejected at the proxy with `Broker: Broker failed to validate record`. See [Step 5](docs/05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation).
 
 ### 4. Multi-Tenancy on a Shared Cluster
 
@@ -230,11 +234,11 @@ flowchart LR
         subgraph authNs["namespace: kafka-auth"]
             KC["Red Hat build of Keycloak<br/>(JWKS endpoint)"]
         end
-        subgraph proxyNs["namespace: kafka-proxy"]
+        subgraph proxyNs["namespace: kafka-proxy — DMZ"]
             P["Kafka Proxy<br/>SaslInspection +<br/>OauthBearerValidation"]
         end
-        subgraph kafkaNs["namespace: kafka — DMZ"]
-            K["Kafka cluster<br/>(oauth listener)"]
+        subgraph kafkaNs["namespace: kafka — secure backend"]
+            K["Kafka cluster<br/>(oauth listener)<br/>reachable only by the proxy"]
         end
         CON["Kafka Console"]
     end
@@ -249,7 +253,7 @@ flowchart LR
 
 **Good fit when:** you want centralized identity for the streaming platform — SSO, short-lived tokens, per-client service accounts — while keeping the proxy's stable endpoints, TLS termination, and edge authorization.
 
-> ℹ️ **Scope notes:** `OAUTHBEARER` inspection/validation supports JWS-signed JWTs only (JWE unsupported). In SASL Passthrough Inspection the proxy holds the authorization ID in memory but the broker still authenticates the client — an unauthenticated caller that can reach the proxy still gets proxied access, so pair inspection with `OauthBearerValidation` or mTLS if that matters to your threat model. This guide's reference deployment authenticates the data path **end-to-end with OAuth**: the `tls` listener requires SASL/OAUTHBEARER only, and workloads authenticate with tokens from Keycloak (`client_credentials` service-account clients — see [Step 1.5](docs/02-keycloak.md#15--client-authentication-at-the-proxy)).
+> ℹ️ **Scope notes:** `OAUTHBEARER` inspection/validation supports JWS-signed JWTs only (JWE unsupported). In SASL Passthrough Inspection the proxy holds the authorization ID in memory but the broker still authenticates the client — an unauthenticated caller that can reach the proxy still gets proxied access, so pair inspection with `OauthBearerValidation` or mTLS if that matters to your threat model. This guide's reference deployment authenticates the data path **end-to-end with OAuth**: the `tls` listener requires SASL/OAUTHBEARER only, and workloads authenticate with tokens from Keycloak (`client_credentials` service-account clients — see [Step 2.5](docs/02-keycloak.md#25--client-authentication-at-the-proxy)).
 
 ### 6. Stable Client Endpoints & TLS Termination
 
@@ -270,7 +274,7 @@ flowchart LR
 **Proxy solution.**
 
 1. Repoint clients to the proxy's virtual cluster (the only client change you make).
-2. Replicate data with your chosen tool (e.g., MirrorMaker 2 — set up between the two clusters in [Step 18](docs/10-mirrormaker2.md#step-18-mirrormaker-2-between-the-two-clusters-optional)).
+2. Replicate data with your chosen tool (e.g., MirrorMaker 2 — set up between the two clusters in [Step 4](docs/04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)).
 3. Switch the virtual cluster's upstream target to the new cluster — clients are cut over without knowing.
 4. Rollback is switching the upstream back.
 
@@ -284,7 +288,7 @@ flowchart LR
 
 **Proxy solution.** The proxy exposes Prometheus-style metrics for its own operations (connections, requests, filter activity such as encryption operations and validation rejections). As of 3.2, **idle connection handling** can automatically close idle downstream/upstream connections — with dedicated metrics and extra Netty tuning properties for advanced cases. Scrape the metrics alongside broker and client metrics to get an end-to-end view of the data path, and alert on signals like "records passed through unencrypted" (missing KEK) or validation rejection spikes.
 
-On OpenShift, wire **every** component of the stack — brokers, proxy, HTTP Bridge, Keycloak, clients, and the Console itself — into the built-in **user-workload monitoring** stack; the full integration (enablement, `PodMonitor`/`ServiceMonitor` resources, DMZ NetworkPolicy allowances, alert rules) is [Step 15](docs/07-observability.md#step-15-integrate-the-stack-with-openshift-user-workload-monitoring-observability) of the setup guide.
+On OpenShift, wire **every** component of the stack — brokers, proxy, HTTP Bridge, Keycloak, clients, and the Console itself — into the built-in **user-workload monitoring** stack; the full integration (enablement, `PodMonitor`/`ServiceMonitor` resources, DMZ NetworkPolicy allowances, alert rules) is [Step 1](docs/01-user-workload-monitoring.md#step-1-integrate-the-stack-with-openshift-user-workload-monitoring-observability) of the setup guide.
 
 ## Capability Matrix
 
@@ -293,7 +297,7 @@ On OpenShift, wire **every** component of the stack — brokers, proxy, HTTP Bri
 | Record encryption at rest | ✅ GA | Envelope encryption, AES-256-GCM, record values only |
 | KMS integration | ✅ GA | HashiCorp Vault (Transit), AWS KMS; KMS SPI for others |
 | Key rotation | ✅ GA | KEK rotation in KMS; DEK refresh bounded by cache settings |
-| Poison-message prevention | ⚠️ Preview | Record Validation: Apicurio schema / JSON syntax — demoed live in [Step 17](docs/09-apicurio-registry.md#step-17-deploy-apicurio-registry-and-validate-records-record-validation) |
+| Poison-message prevention | ⚠️ Preview | Record Validation: Apicurio schema / JSON syntax — demoed live in [Step 5](docs/05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation) |
 | Record provenance (JWS signatures) | ⚠️ Preview (new in 3.2) | JWS Signature validation in Record Validation filter |
 | Multi-tenancy (virtual clusters) | ✅ | Endpoint/TLS isolation + topic naming; not full per-tenant quotas |
 | Entity isolation (groups, txn IDs) | ⚠️ Preview (new in 3.2) | Per-principal isolation even with identical names; needs an authenticated subject (mTLS or a SASL mode) |
@@ -322,21 +326,21 @@ On OpenShift, wire **every** component of the stack — brokers, proxy, HTTP Bri
 
 - [ ] Install the **proxy Operator** and deploy the proxy on OpenShift (see [*Deploying and Managing Streams for Apache Kafka Proxy on OpenShift*](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift) or the [local setup guide](openshift-setup.md)).
 - [ ] Create a `VirtualKafkaCluster` pointing at your upstream Kafka cluster (`KafkaService`); verify produce/consume through the proxy with no filters first. Off-cluster clients connect via OpenShift Route or load balancer. Create client credentials if your target listener authenticates (this repo's `tls` listener uses OAUTHBEARER only — service-account clients in the `kafka` Keycloak realm, see [deploy/keycloak/04-kafka-realm-import.yaml](deploy/keycloak/04-kafka-realm-import.yaml)).
-- [ ] **Run the proxy in a DMZ**: restrict Kafka cluster ingress to the proxy's namespace with `NetworkPolicy` rules so clients can only reach the proxy, and the proxy only the brokers (see [Step 0.4](docs/01-kafka-cluster.md#04--restrict-kafka-ingress-to-the-proxy-namespace-dmz)).
-- [ ] (Optional) Deploy the **Kafka HTTP Bridge** in a dedicated `kafka-http-bridge` namespace with `bootstrapServers` pointing at the proxy's bootstrap, giving HTTP/REST clients access to the cluster through the proxy — and lock down its unauthenticated HTTP API with a NetworkPolicy (see [Step 12](docs/04-http-bridge.md#step-12-deploy-the-kafka-http-bridge-dmz-client)).
-- [ ] (Optional) Deploy the **Streams for Apache Kafka Console** in a `kafka-console` namespace, connected to the proxy's *virtual* cluster for UI visibility and secured with Keycloak OIDC (see [Step 13](docs/05-console.md#step-13-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)).
-- [ ] (Optional) Deploy **Camel Quarkus** producer and consumer clients in separate `kafka-producer` and `kafka-consumer` namespaces, connecting through the proxy with the latest supported Red Hat build of Apache Camel (see [Step 14](docs/06-camel-clients.md#step-14-deploy-camel-producer-and-consumer-clients-kafka-producer-and-kafka-consumer-namespaces)).
+- [ ] **Run the proxy in a DMZ**: restrict Kafka cluster ingress to the proxy's namespace with `NetworkPolicy` rules so clients can only reach the proxy, and the proxy only the brokers (see [Step 3.4](docs/03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz)).
+- [ ] (Optional) Deploy the **Kafka HTTP Bridge** in a dedicated `kafka-http-bridge` namespace with `bootstrapServers` pointing at the proxy's bootstrap, giving HTTP/REST clients access to the cluster through the proxy — and lock down its unauthenticated HTTP API with a NetworkPolicy (see [Step 7](docs/07-http-bridge.md#step-7-deploy-the-kafka-http-bridge-dmz-client)).
+- [ ] (Optional) Deploy the **Streams for Apache Kafka Console** in a `kafka-console` namespace, connected to the proxy's *virtual* cluster for UI visibility and secured with Keycloak OIDC (see [Step 8](docs/08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)).
+- [ ] (Optional) Deploy **Camel Quarkus** producer and consumer clients in separate `kafka-producer` and `kafka-consumer` namespaces, connecting through the proxy with the latest supported Red Hat build of Apache Camel (see [Step 9](docs/09-camel-clients.md#step-9-deploy-camel-producer-and-consumer-clients-kafka-producer-and-kafka-consumer-namespaces)).
 - [ ] Pick **one** filter to start with:
   - Record Encryption → set up Vault (Transit Engine) or AWS KMS first; create KEKs per encrypted topic (`KEK_<topicName>`); configure the filter; verify by producing through the proxy and consuming **directly from the broker** (you should see ciphertext).
   - Record Validation → set up Apicurio Registry; start with a `defaultRule` on a non-critical topic.
 - [ ] Tune DEK cache settings against your KMS costs and blast-radius requirements.
 - [ ] Scale proxy replicas for CPU (especially with encryption enabled) and run the KMS in HA.
 - [ ] Enable idle connection handling if long-lived client connections are inflating resource use.
-- [ ] Integrate the whole stack with **OpenShift user-workload monitoring** — broker metrics (Strimzi Metrics Reporter), proxy/operator PodMonitors, bridge metricsConfig, Keycloak auto-ServiceMonitor, Console `metricsSources`, Camel Micrometer endpoints, plus the NetworkPolicy allowances the DMZ needs ([Step 15](docs/07-observability.md#step-15-integrate-the-stack-with-openshift-user-workload-monitoring-observability)); then alert on unencrypted pass-through and validation rejections.
+- [ ] Integrate the whole stack with **OpenShift user-workload monitoring** — broker metrics (Strimzi Metrics Reporter), proxy/operator PodMonitors, bridge metricsConfig, Keycloak auto-ServiceMonitor, Console `metricsSources`, Camel Micrometer endpoints, plus the NetworkPolicy allowances the DMZ needs ([Step 1](docs/01-user-workload-monitoring.md#step-1-integrate-the-stack-with-openshift-user-workload-monitoring-observability)); then alert on unencrypted pass-through and validation rejections.
 - [ ] Document rollback: repoint clients directly at the broker (plaintext flows resume only for topics where the proxy was the encryption point — plan cutover carefully).
-- [ ] (Optional) Develop and deploy a **custom filter** — generate a filter project with the upstream Maven archetype, package the plugin JARs onto a custom proxy image built in-cluster, and wire it to the virtual cluster ([Step 16](docs/08-custom-filter.md#step-16-develop-and-deploy-a-custom-filter-optional)).
-- [ ] (Optional) Run **MirrorMaker 2** between the two clusters for the migration pattern — replicate topics and consumer groups over the `plain` listener (no credentials needed), then cut over by switching the `KafkaService` upstream ([Step 18](docs/10-mirrormaker2.md#step-18-mirrormaker-2-between-the-two-clusters-optional)).
-- [ ] (Optional) Run the **demo scenarios** — 14 ready-made walkthroughs covering token revocation, proxy-side authorization/isolation/token-validation, MM2 cutover and failover, Record Encryption with a dev Vault, and more ([Step 19](docs/11-demos.md)).
+- [ ] (Optional) Develop and deploy a **custom filter** — generate a filter project with the upstream Maven archetype, package the plugin JARs onto a custom proxy image built in-cluster, and wire it to the virtual cluster ([Step 10](docs/10-custom-filter.md#step-10-develop-and-deploy-a-custom-filter-optional)).
+- [ ] (Optional) Run **MirrorMaker 2** between the two clusters for the migration pattern — replicate topics and consumer groups over the `plain` listener (no credentials needed), then cut over by switching the `KafkaService` upstream ([Step 4](docs/04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)).
+- [ ] (Optional) Run the **demo scenarios** — 14 ready-made walkthroughs covering token revocation, proxy-side authorization/isolation/token-validation, MM2 cutover and failover, Record Encryption with a dev Vault, and more ([Step 11](docs/11-demos.md)).
 - [ ] Try the example custom resources in the `examples/` directory of the `streams-3.2-ocp-install-examples.zip` archive for a quick start.
 
 ## Glossary

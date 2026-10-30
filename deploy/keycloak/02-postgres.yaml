@@ -1,4 +1,4 @@
-# deploy/keycloak/02-postgres.yaml — Step 1.2 (openshift-setup.md)
+# deploy/keycloak/02-postgres.yaml — Step 2.2 (openshift-setup.md)
 # Dev-only ephemeral PostgreSQL for Keycloak (the operator does not manage the
 # database). Data is lost on pod restart — use a persistent/supported DB for
 # anything beyond development.

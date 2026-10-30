@@ -1,5 +1,5 @@
-# deploy/proxy/04-kafkaservice.yaml — Step 6 (docs/03-proxy.md)
-# The upstream (backend) Kafka clusters from Step 0, reached over their TLS
+# deploy/proxy/04-kafkaservice.yaml — Step 6.5 (docs/06-proxy.md)
+# The upstream (backend) Kafka clusters from Step 3, reached over their TLS
 # listener (9093). strimziKafkaRef lets the operator discover the bootstrap
 # address from the Strimzi Kafka CR's status and auto-trust the Strimzi
 # cluster CA (Secret <cluster>-cluster-ca-cert) — no hardcoded bootstrap, no

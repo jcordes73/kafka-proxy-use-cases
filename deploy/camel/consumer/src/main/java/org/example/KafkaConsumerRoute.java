@@ -1,4 +1,4 @@
-// deploy/camel/consumer/src/main/java/org/example/KafkaConsumerRoute.java — Step 14.2
+// deploy/camel/consumer/src/main/java/org/example/KafkaConsumerRoute.java — Step 9.2
 package org.example;
 
 import java.util.Map;

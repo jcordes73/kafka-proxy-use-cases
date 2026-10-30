@@ -1,4 +1,4 @@
-# deploy/observability/04-bridge-metrics.yaml — Step 15.5 (openshift-setup.md)
+# deploy/observability/04-bridge-metrics.yaml — Step 1.5 (openshift-setup.md)
 # JMX Exporter metricsConfig for the bridge (the Kafka client internals are
 # JMX-based), exposed on the bridge's existing HTTP port 8080 (port name
 # rest-api) alongside the REST API — plus the PodMonitor for it.
@@ -33,7 +33,7 @@ metadata:
   namespace: kafka-http-bridge
 spec:
   replicas: 1
-  # Mirrors deploy/bridge/01-kafka-bridge.yaml (Step 12.2) + metricsConfig —
+  # Mirrors deploy/bridge/01-kafka-bridge.yaml (Step 7.2) + metricsConfig —
   # do not trim the TLS/authentication settings or applying this manifest
   # reverts the bridge to an unauthenticated, wrong-bootstrap state.
   bootstrapServers: kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292

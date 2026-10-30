@@ -1,4 +1,4 @@
-# deploy/mirrormaker2/01-mirrormaker2.yaml — Step 18 (docs/10-mirrormaker2.md)
+# deploy/mirrormaker2/01-mirrormaker2.yaml — Step 4 (docs/04-mirrormaker2.md)
 # MirrorMaker 2 replication between the two dev clusters:
 #   source: kafka-cluster-1 (kafka-cluster-1 namespace)
 #   target: kafka-cluster-2 (kafka-cluster-2 namespace)
@@ -7,7 +7,7 @@
 # unencrypted. No OAUTHBEARER credentials, Keycloak client, or TLS trust are
 # needed (the alternative — the OAUTHBEARER-only tls listener — requires the
 # mm2 Keycloak client and cluster CA copies; see the guide). Replication
-# traffic stays in-cluster; the DMZ NetworkPolicy allowance added in Step 0.4
+# traffic stays in-cluster; the DMZ NetworkPolicy allowance added in Step 3.4
 # opens the plain listener port only (kafka-mm2 namespace, port 9092).
 #
 # MM2's internal topics (config/offsets/status) are created on the TARGET
@@ -18,7 +18,7 @@ apiVersion: v1
 metadata:
   name: kafka-mm2
   annotations:
-    openshift.io/description: "MirrorMaker 2 (kafka-cluster-1 → kafka-cluster-2)"
+    openshift.io/description: "MirrorMaker 2, secure backend replication (kafka-cluster-1 → kafka-cluster-2)"
 ---
 # kind: KafkaMirrorMaker2
 apiVersion: kafka.strimzi.io/v1
@@ -48,8 +48,11 @@ spec:
     - source:
         alias: kafka-cluster-1
         bootstrapServers: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9092
-        # Empty object = default configuration (Red Hat 3.2 guide, 10.9.1)
-        sourceConnector: {}
+      # Empty object = default configuration (Red Hat 3.2 guide, 10.9.1).
+      # NOTE: sourceConnector lives at MIRROR level, not under `source` —
+      # nested under `source` it is an unknown field that the CRD silently
+      # prunes, and the operator then generates zero mirror connectors.
+      sourceConnector: {}
       # Mirror all topics and consumer groups; mirrored resources are prefixed
       # with the source alias (kafka-cluster-1.<topic>, kafka-cluster-1.<group>)
       topicsPattern: ".*"

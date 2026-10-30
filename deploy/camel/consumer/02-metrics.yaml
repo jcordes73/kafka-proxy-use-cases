@@ -1,4 +1,4 @@
-# deploy/camel/consumer/02-metrics.yaml — Step 15.8 (openshift-setup.md)
+# deploy/camel/consumer/02-metrics.yaml — Step 1.8 (openshift-setup.md)
 # Service + ServiceMonitor registering the Quarkus Micrometer endpoint
 # (/q/metrics on the app port 8080) with user-workload monitoring.
 apiVersion: v1

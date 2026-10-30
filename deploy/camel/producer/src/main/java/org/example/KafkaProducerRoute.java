@@ -1,7 +1,9 @@
-// deploy/camel/producer/src/main/java/org/example/KafkaProducerRoute.java — Step 14.2
+// deploy/camel/producer/src/main/java/org/example/KafkaProducerRoute.java — Step 9.2
 package org.example;
 
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
@@ -29,7 +31,16 @@ public class KafkaProducerRoute extends RouteBuilder {
                 "http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token"));
 
         from("timer:tick?period=5s")
-            .setBody(simple("hello from Camel ${date:now:yyyy-MM-dd HH:mm:ss}"))
-            .to("kafka:test-topic");   // produced THROUGH the proxy
+            // Message body conforms to the record-validation demo JSON schema
+            // (Step 8.4 / Demo 2): {"orderId": string, "amount": number},
+            // no additional properties. The same payload passes the
+            // RecordValidation filter scoped to record-validation-demo.
+            .process(e -> {
+                int amount = ThreadLocalRandom.current().nextInt(1, 1000);
+                String orderId = "C-" + UUID.randomUUID().toString().substring(0, 8);
+                e.getIn().setBody("{\"orderId\":\"" + orderId + "\",\"amount\":" + amount + "}");
+            })
+            .to("kafka:test-topic")   // produced THROUGH the proxy
+            .log("sent: ${body}");
     }
 }

@@ -1,8 +1,8 @@
-# deploy/kafka/02-kafka.yaml — Steps 0.2 + 15.3 (docs/01-kafka-cluster.md)
+# deploy/kafka/02-kafka.yaml — Steps 3.2 + 15.3 (docs/03-kafka-cluster.md)
 # Two dev Kafka clusters (KRaft, no ZooKeeper), one per namespace, each with:
 #   - plain (9092) + tls (9093) internal listeners — the proxy's upstreams
 #   - SASL/OAUTHBEARER (only mechanism) on the tls listener (SASL_SSL)
-#   - strimziMetricsReporter metricsConfig on 9404 (Step 15.3)
+#   - strimziMetricsReporter metricsConfig on 9404 (Step 1.3)
 #
 # OAUTHBEARER ON THE TLS LISTENER: the proxy cannot authenticate to the brokers
 # itself (KafkaService has no SASL support) — it relays the client's SASL/
@@ -15,9 +15,9 @@
 # uses `custom` auth with the Strimzi OAuth callback handlers (Strimzi prefixes
 # listenerConfig keys with listener.name.tls.). Inter-broker traffic stays on
 # the unauthenticated plain listener. Broker isolation is enforced by the DMZ
-# NetworkPolicies (Step 0.4).
+# NetworkPolicies (Step 3.4).
 #
-# networkPolicyPeers note (Step 0.4): Strimzi 0.51 auto-generates a listener
+# networkPolicyPeers note (Step 3.4): Strimzi 0.51 auto-generates a listener
 # NetworkPolicy (<cluster-name>-network-policy-kafka) per Kafka cluster. Without
 # per-listener peers it opens the listener ports to ALL namespaces, which
 # defeats the DMZ in 03-kafka-netpol-dmz.yaml. The peers below restrict the
@@ -42,7 +42,7 @@ spec:
           - namespaceSelector:
               matchLabels:
                 kubernetes.io/metadata.name: kafka-proxy
-          # MirrorMaker 2 replication plane (Step 18) — kafka-mm2 uses the
+          # MirrorMaker 2 replication plane (Step 4) — kafka-mm2 uses the
           # plain listener only (no authentication needed for replication)
           - namespaceSelector:
               matchLabels:
@@ -74,7 +74,7 @@ spec:
             oauthbearer.sasl.jaas.config: |
               org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
                 unsecuredLoginStringClaim_sub="thePrincipalName" \
-                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.apps.ocp.67vts.sandbox598.opentlc.com:8080/realms/kafka" \
+                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}:8080/realms/kafka" \
                 oauth.jwks.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs" \
                 oauth.username.claim="preferred_username" \
                 oauth.jwks.refresh.seconds="300" \
@@ -92,7 +92,7 @@ spec:
       transaction.state.log.min.isr: 2
       default.replication.factor: 3
       min.insync.replicas: 2
-    # Step 15.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
+    # Step 1.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
     metricsConfig:
       type: strimziMetricsReporter
       values:
@@ -121,7 +121,7 @@ spec:
           - namespaceSelector:
               matchLabels:
                 kubernetes.io/metadata.name: kafka-proxy
-          # MirrorMaker 2 replication plane (Step 18) — kafka-mm2 uses the
+          # MirrorMaker 2 replication plane (Step 4) — kafka-mm2 uses the
           # plain listener only (no authentication needed for replication)
           - namespaceSelector:
               matchLabels:
@@ -153,7 +153,7 @@ spec:
             oauthbearer.sasl.jaas.config: |
               org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
                 unsecuredLoginStringClaim_sub="thePrincipalName" \
-                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.apps.ocp.67vts.sandbox598.opentlc.com:8080/realms/kafka" \
+                oauth.valid.issuer.uri="http://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}:8080/realms/kafka" \
                 oauth.jwks.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs" \
                 oauth.username.claim="preferred_username" \
                 oauth.jwks.refresh.seconds="300" \
@@ -171,7 +171,7 @@ spec:
       transaction.state.log.min.isr: 2
       default.replication.factor: 3
       min.insync.replicas: 2
-    # Step 15.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
+    # Step 1.3 — Strimzi Metrics Reporter: Prometheus-format metrics on 9404
     metricsConfig:
       type: strimziMetricsReporter
       values:

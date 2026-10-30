@@ -1,23 +1,23 @@
-# deploy/keycloak/04-kafka-realm-import.yaml — Step 1.4 (openshift-setup.md)
+# deploy/keycloak/04-kafka-realm-import.yaml — Step 2.4 (openshift-setup.md)
 # Creates the `kafka` realm for the platform's OIDC consumers. Client secrets
 # are inline for dev simplicity — do not commit rotated/real secrets this way.
 #
 # Keycloak IS wired to the Kafka data path: the tls listener (9093) requires
-# SASL/OAUTHBEARER (Step 0.2, deploy/kafka/02-kafka.yaml) — the service-account
+# SASL/OAUTHBEARER (Step 3.2, deploy/kafka/02-kafka.yaml) — the service-account
 # clients below are the data-path credentials. Each workload obtains tokens
 # with the client_credentials grant and authenticates through the proxy
 # (SASL passthrough); the brokers validate the tokens against Keycloak's JWKS.
-# Keycloak also serves the console's OIDC browser login (Step 13).
+# Keycloak also serves the console's OIDC browser login (Step 8).
 #
 # Client usage map:
-#   kafka-console       Console UI OIDC browser login            (Step 13.3)
-#   kafka-console-kafka Console's Kafka connection (OAUTHBEARER) (Step 13.2)
-#   kafka-bridge        HTTP Bridge Kafka connection             (Step 12.2)
-#   camel-producer      Camel producer Kafka connection          (Step 14.3)
-#   camel-consumer      Camel consumer Kafka connection          (Step 14.3)
-#   demo-client         kcat/CLI smoke tests (Step 11)
+#   kafka-console       Console UI OIDC browser login            (Step 8.3)
+#   kafka-console-kafka Console's Kafka connection (OAUTHBEARER) (Step 8.2)
+#   kafka-bridge        HTTP Bridge Kafka connection             (Step 7.2)
+#   camel-producer      Camel producer Kafka connection          (Step 9.3)
+#   camel-consumer      Camel consumer Kafka connection          (Step 9.3)
+#   demo-client         kcat/CLI smoke tests (Step 6.10)
 #   (MirrorMaker 2 connects via the unauthenticated plain listener — no client
-#    needed here, see docs/10-mirrormaker2.md)
+#    needed here, see docs/04-mirrormaker2.md)
 #
 # To use a client secret in a Deployment, create a Secret in the workload's
 # namespace (Secrets cannot be referenced across namespaces) — the realm
@@ -44,14 +44,19 @@ spec:
     accessTokenLifespan: 300
     clients:
       # Console client — browser login (standard flow) for the Streams for
-      # Apache Kafka Console UI (Step 13); redirect URI points at the
-      # console's hostname (Step 13.2 spec.hostname)
+      # Apache Kafka Console UI (Step 8); redirect URI points at the
+      # console's hostname (Step 8.2 spec.hostname)
       - clientId: kafka-console
         enabled: true
         protocol: openid-connect
         publicClient: false
         secret: kafka-console-secret
         standardFlowEnabled: true
+        # Direct grants let the kafka-admin user fetch a token from the CLI
+        # (password grant) with the same kafka-console client the console UI
+        # uses — the realm's built-in admin-cli only issues a slim token
+        # without realm roles, which the registry's role-based authz rejects.
+        directAccessGrantsEnabled: true
         serviceAccountsEnabled: false
         redirectUris:
           - "https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*"
@@ -87,6 +92,26 @@ spec:
         secret: camel-consumer-secret
         standardFlowEnabled: false
         serviceAccountsEnabled: true
+      # Apicurio Registry clients (Step 5.2): registry-api is the backend
+      # client (OIDC token validation via JWKS); registry-ui is the public
+      # browser client for the registry UI Route.
+      - clientId: registry-api
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: registry-api-secret
+        standardFlowEnabled: false
+        serviceAccountsEnabled: true
+      - clientId: registry-ui
+        enabled: true
+        protocol: openid-connect
+        publicClient: true
+        standardFlowEnabled: true
+        serviceAccountsEnabled: false
+        redirectUris:
+          - "https://registry-ui.${OPENSHIFT_APPS_DOMAIN}/*"
+        webOrigins:
+          - "https://registry-ui.${OPENSHIFT_APPS_DOMAIN}"
       - clientId: demo-client
         enabled: true
         protocol: openid-connect
@@ -94,7 +119,16 @@ spec:
         secret: demo-client-secret
         standardFlowEnabled: false
         serviceAccountsEnabled: true
-    # Demo user for the console's OIDC login (Step 13.3 subjects.include) —
+    # Realm roles for Apicurio Registry role-based authorization (Step 5.2):
+    # sr-admin grants full registry access (assigned to the kafka-admin user
+    # and to the registry-api service account, whose token must carry the
+    # role for writes); sr-developer/sr-readonly for developers/readers.
+    roles:
+      realm:
+        - name: sr-admin
+        - name: sr-developer
+        - name: sr-readonly
+    # Demo user for the console's OIDC login (Step 8.3 subjects.include) —
     # dev only; manage real users through your identity source.
     users:
       - username: demo
@@ -102,3 +136,27 @@ spec:
         credentials:
           - type: password
             value: demopassword
+      # Cluster administrator (dev): full access to the Apicurio Registry
+      # (sr-admin role), the Kafka Console (subjects mapping in the Console
+      # CR), and the Kafka cluster itself (no authorization block — all
+      # authenticated principals have full cluster access).
+      - username: kafka-admin
+        enabled: true
+        # Profile fields are required: without them VERIFY_PROFILE fires at
+        # first login and password grants fail with "Account is not fully
+        # set up" (verified live in Step 5.2).
+        firstName: Kafka
+        lastName: Admin
+        email: kafka-admin@example.com
+        emailVerified: true
+        credentials:
+          - type: password
+            value: openshift
+        realmRoles:
+          - sr-admin
+      # NOTE: do NOT declare `service-account-registry-api` here — Keycloak
+      # auto-creates the service-account user when the client's
+      # serviceAccountsEnabled is on, and an explicit entry collides
+      # (duplicate (realm_id, username) → ModelDuplicateException, import
+      # fails). Assign the sr-admin role to the SA via the admin API
+      # instead (verified live in Step 5.2).

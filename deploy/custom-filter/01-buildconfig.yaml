@@ -1,6 +1,6 @@
-# deploy/custom-filter/01-buildconfig.yaml — Step 16.4 (openshift-setup.md)
+# deploy/custom-filter/01-buildconfig.yaml — Step 10.4 (openshift-setup.md)
 # In-cluster image build for a custom Kafka Proxy filter, following the Camel
-# pattern (Step 14.4): binary (from-dir) build with a Docker strategy. The
+# pattern (Step 9.4): binary (from-dir) build with a Docker strategy. The
 # payload is the local Maven filter project (from the kroxylicious-filter-archetype)
 # plus the Dockerfile from this directory — start it with:
 #
@@ -8,7 +8,7 @@
 #   oc apply -f 01-buildconfig.yaml
 #   oc start-build kroxylicious-custom-filter --from-dir=sample-filter -n kafka-filter-dev --follow
 #
-# The operator is then pointed at the image with (Step 16.5):
+# The operator is then pointed at the image with (Step 10.5):
 #
 #   oc -n kafka-proxy set env deploy/kafka-proxy \
 #     KROXYLICIOUS_IMAGE=image-registry.openshift-image-registry.svc:5000/kafka-filter-dev/kroxylicious-custom-filter:0.25.1

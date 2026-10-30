@@ -1,13 +1,56 @@
 # OpenShift Deployment Manifests
 
-Ready-to-apply manifests for the full stack from [openshift-setup.md](../openshift-setup.md), organized per component. **Run all commands from the repository root** — every path below (and in the guides) is relative to it. Apply in guide order:
+Ready-to-apply manifests for the full stack from [openshift-setup.md](../openshift-setup.md), organized per component. **Run all commands from the repository root** — every path below (and in the guides) is relative to it. Apply in **deployment order** — the user-workload monitoring stack first, then Keycloak, then the Kafka cluster, then MirrorMaker 2, then the Apicurio Registry, then the proxy (the HTTP Bridge and Console connect through it and follow), and the per-component monitoring *integration* — netpols, PodMonitors, console metrics source, alerts — after those components deploy. The Record Validation demo lives in [deploy/demos/](demos/02-record-validation-demo.yaml) ([Demo scenarios — Demo 2](../docs/11-demos.md#demo-2--record-validation-end-to-end)) and deploys with the optional demo scenarios:
 
 ```bash
-# Step 0 — Kafka cluster (operator first, then cluster, then DMZ netpols)
+# Deploy order 1 — user-workload monitoring stack (Step 1.1, cluster-admin, once)
+oc apply -f deploy/observability/00-cluster-monitoring-config.yaml
+oc -n openshift-user-workload-monitoring get pod   # prometheus-user-workload-0 Running
+
+# Deploy order 2 — Keycloak (operator first, then dev PostgreSQL, then keycloak, realm import)
+oc apply -f deploy/keycloak/
+
+# Deploy order 3 — Kafka cluster, the secure backend (operator first, then cluster, then backend lockdown netpols)
 oc apply -f deploy/kafka/00-cluster-operator-olm.yaml          # includes the kafka Namespace + OLM subscription (Manual approval — approve the InstallPlan)
 oc apply -f deploy/kafka/01-kafka-nodepool.yaml -f deploy/kafka/02-kafka.yaml
 oc wait --for=condition=Ready kafka/my-cluster -n kafka --timeout=600s
 oc apply -f deploy/kafka/03-kafka-netpol-dmz.yaml
+
+# Deploy order 4 — MirrorMaker 2 (Step 4, optional): replicates kafka-cluster-1 → kafka-cluster-2.
+# The Cluster Operator must watch kafka-mm2 — extend the OperatorGroup before deploying.
+# MM2 connects via the unauthenticated plain listener (9092), so no credentials or CA copies are needed.
+oc patch operatorgroup kafka-operator-group -n kafka --type merge \
+  -p '{"spec":{"targetNamespaces":["kafka","kafka-http-bridge","kafka-mm2"]}}'
+oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml
+oc wait --for=condition=Ready kafkamirrormaker2/kafka-cluster-1-to-2 -n kafka-mm2 --timeout=600s
+
+# Deploy order 5 — Apicurio Registry (Steps 5.1–5.4): operator, dev PostgreSQL, registry, schema.
+# The registry CR (03-registry.yaml) embeds Routes + Keycloak auth — apply through envsubst.
+# The OIDC truststore (keycloak-oidc-truststore) must be built with keytool from the
+# Keycloak cert — an openssl-generated p12 loads with 0 entries in the JVM (Step 5.2).
+# Realm import gotchas: don't declare service-account users (Keycloak auto-creates
+# them — a duplicate entry fails the import); the import is skipped when the realm
+# already exists (delete the realm + the import Job to re-run it).
+# The Record Validation demo (Demo scenarios, Demo 2) is optional — its manifest moved to
+# deploy/demos/02-record-validation-demo.yaml; it needs the proxy's virtual cluster, so it
+# deploys with the demo scenarios (Step 11).
+oc apply -f deploy/apicurio/01-subscription.yaml
+oc -n kafka-registry patch installplan $(oc -n kafka-registry get installplan -o jsonpath='{.items[0].metadata.name}') --type merge -p '{"spec":{"approved":true}}'
+oc apply -f deploy/apicurio/02-postgres.yaml
+oc apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry-postgres-db
+  namespace: kafka-registry
+type: Opaque
+stringData:
+  username: registryuser
+  password: registrypassword
+EOF
+oc apply -f deploy/apicurio/03-registry.yaml
+oc -n kafka-registry wait --for=condition=Ready apicurioregistry3/apicurio-registry --timeout=600s
+# 5.4 — register the schema (contentId feeds the Demo 2 filter): see docs/05-apicurio-registry.md
 ```
 
 > **OAuth credentials for the data path:** the `tls` listener requires SASL/OAUTHBEARER — the service-account clients in the `kafka` realm ([`deploy/keycloak/04-kafka-realm-import.yaml`](keycloak/04-kafka-realm-import.yaml)) are the workloads' credentials. The realm import does **not** create Kubernetes Secrets — create one per workload in its own namespace before deploying the clients:
@@ -17,16 +60,7 @@ oc apply -f deploy/kafka/03-kafka-netpol-dmz.yaml
 > oc create secret generic camel-producer-oauth --from-literal=client-secret=camel-producer-secret -n kafka-producer
 > oc create secret generic camel-consumer-oauth --from-literal=client-secret=camel-consumer-secret -n kafka-consumer
 > oc create secret generic kafka-console-kafka-oauth --from-literal=client-secret=kafka-console-kafka-secret -n kafka-console
-> # demo-client-oauth in kafka-proxy — see docs/03-proxy.md Step 11 (smoke tests)
-> ```
->
-> **MirrorMaker 2 ([Step 18](../docs/10-mirrormaker2.md), optional):** the Cluster Operator must watch `kafka-mm2` — extend the OperatorGroup before deploying. MM2 connects via the unauthenticated `plain` listener (9092), so no credentials or CA copies are needed:
->
-> ```bash
-> oc patch operatorgroup kafka-operator-group -n kafka --type merge \
->   -p '{"spec":{"targetNamespaces":["kafka","kafka-http-bridge","kafka-mm2"]}}'
-> oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml
-> oc wait --for=condition=Ready kafkamirrormaker2/kafka-cluster-1-to-2 -n kafka-mm2 --timeout=600s
+> # demo-client-oauth in kafka-proxy — see docs/06-proxy.md Step 6.10 (smoke tests)
 > ```
 
 ## Namespaces ship with each component
@@ -54,19 +88,20 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `demos/10-mm2-failover.yaml` | `kafka-mm2` (replaces the running KafkaMirrorMaker2) |
 | `demos/11-record-encryption.yaml` | `kafka-vault` + `kafka-proxy` |
 
-| Directory | Component | Guide step |
+| Directory | Component | Guide step (= deploy order) |
 |---|---|---|
-| `deploy/kafka/` | Streams for Apache Kafka operator (OLM) + Kafka cluster (OAUTHBEARER-only tls listener) | [0](../docs/01-kafka-cluster.md) |
-| `deploy/keycloak/` | Red Hat build of Keycloak (kafka-auth namespace): operator subscription, dev PostgreSQL, `keycloak`, in-cluster http Service (`keycloak-http`), `kafka` realm import (console OIDC client + data-path service-account clients) | [1](../docs/02-keycloak.md) |
-| `deploy/proxy/` | KafkaProxy, ingress, KafkaService, VirtualKafkaCluster (kafka-proxy namespace) | [2–11](../docs/03-proxy.md) |
-| `deploy/bridge/` | Kafka HTTP Bridge + DMZ NetworkPolicies (kafka-http-bridge) | [12](../docs/04-http-bridge.md) |
-| `deploy/console/` | Streams for Apache Kafka Console (kafka-console): operator OLM subscription (`amq-streams-console`), `Console` CR with OIDC, metrics Services + ServiceMonitors | [13](../docs/05-console.md) |
-| `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [14](../docs/06-camel-clients.md) |
-| `deploy/observability/` | OpenShift user-workload monitoring integration (pod/service monitors, metrics netpols, alerts) | [15](../docs/07-observability.md) |
-| `deploy/custom-filter/` | Custom filter plugin: Dockerfile + image build + `KafkaProtocolFilter` (requires the local Maven filter project from [Step 16.1](../docs/08-custom-filter.md#161--generate-and-test-a-filter-project)) | [16](../docs/08-custom-filter.md) |
-| `deploy/apicurio/` | Red Hat build of Apicurio Registry 3 (operator subscription, dev PostgreSQL, `ApicurioRegistry3`, DMZ netpols) + Record Validation demo (topic + filter) | [17](../docs/09-apicurio-registry.md) |
-| `deploy/demos/` | Demo manifests: proxy filters (authorization, entity isolation, token validation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [19](../docs/11-demos.md) |
-| `deploy/mirrormaker2/` | MirrorMaker 2 replication between the two clusters (optional; requires the DMZ allowance from Step 0.4) | [18](../docs/10-mirrormaker2.md) |
+| `deploy/observability/00-cluster-monitoring-config.yaml` | User-workload monitoring stack enablement (`enableUserWorkload`, cluster-admin, once) | [1.1](../docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) |
+| `deploy/keycloak/` | Red Hat build of Keycloak (kafka-auth namespace): operator subscription, dev PostgreSQL, `keycloak`, in-cluster http Service (`keycloak-http`), `kafka` realm import (console OIDC client + data-path service-account clients) | [2](../docs/02-keycloak.md) |
+| `deploy/kafka/` | Streams for Apache Kafka operator (OLM) + Kafka cluster (OAUTHBEARER-only tls listener) | [3](../docs/03-kafka-cluster.md) |
+| `deploy/mirrormaker2/` | MirrorMaker 2 replication between the two backend clusters (secure backend; optional; replicates as soon as both clusters are up) | [4](../docs/04-mirrormaker2.md) |
+| `deploy/apicurio/01–04` | Red Hat build of Apicurio Registry 3 (operator subscription, dev PostgreSQL, `ApicurioRegistry3`, DMZ netpols) + schema registration | [5.1–5.4](../docs/05-apicurio-registry.md) |
+| `deploy/proxy/` | KafkaProxy, ingress, KafkaService, VirtualKafkaCluster (kafka-proxy namespace) | [6](../docs/06-proxy.md) |
+| `deploy/bridge/` | Kafka HTTP Bridge (DMZ client) + DMZ NetworkPolicies (kafka-http-bridge); connects through the proxy | [7](../docs/07-http-bridge.md) |
+| `deploy/console/` | Streams for Apache Kafka Console (kafka-console): operator OLM subscription (`amq-streams-console`), `Console` CR with OIDC, metrics Services + ServiceMonitors | [8](../docs/08-console.md) |
+| `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [9](../docs/09-camel-clients.md) |
+| `deploy/observability/01–05` | Per-component monitoring integration: metrics netpols, broker/proxy/bridge PodMonitors, alerts | [1.2–1.9](../docs/01-user-workload-monitoring.md) |
+| `deploy/custom-filter/` | Custom filter plugin: Dockerfile + image build + `KafkaProtocolFilter` (requires the local Maven filter project from [Step 10.1](../docs/10-custom-filter.md#101--generate-and-test-a-filter-project)) | [10](../docs/10-custom-filter.md) |
+| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`), proxy filters (authorization, entity isolation, token validation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
 
 ## Templating: `OPENSHIFT_APPS_DOMAIN`
 
@@ -87,13 +122,13 @@ Files without `${OPENSHIFT_APPS_DOMAIN}` can be applied directly with
 `oc apply -f <file>`. (`envsubst` leaves other `${...}` sequences — such as
 Strimzi config-provider references — untouched.)
 
-`deploy/apicurio/05-record-validation-demo.yaml` additionally uses
+`deploy/demos/02-record-validation-demo.yaml` additionally uses
 `${APICURIO_CONTENT_ID}` — the schema's `contentId` from the registry, obtained
-in [Step 17.4](../docs/09-apicurio-registry.md#174--register-a-schema):
+in [Step 5.4](../docs/05-apicurio-registry.md#54--register-a-schema):
 
 ```bash
 export APICURIO_CONTENT_ID=1
-envsubst < deploy/apicurio/05-record-validation-demo.yaml | oc apply -f -
+envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
 ```
 
 ## What stays imperative
@@ -117,6 +152,6 @@ manifest. The guide's remaining `oc` commands are deliberately imperative:
 
 Placeholders in manifest files:
 
-- `<KEYCLOAK_HOST>` — the externally reachable hostname of the `keycloak` Keycloak route (filled in after [Step 1.3](../docs/02-keycloak.md#13--tls-certificate-and-keycloak-deployment) — see [openshift-setup.md, Step 1](../docs/02-keycloak.md#step-1-install-red-hat-build-of-keycloak-kafka-auth-namespace)). Derived as `keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}`; used by the console OIDC configuration.
+- `<KEYCLOAK_HOST>` — the externally reachable hostname of the `keycloak` Keycloak route (filled in after [Step 2.3](../docs/02-keycloak.md#23--tls-certificate-and-keycloak-deployment) — see [openshift-setup.md, Step 2](../docs/02-keycloak.md#step-2-install-red-hat-build-of-keycloak-kafka-auth-namespace)). Derived as `keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}`; used by the console OIDC configuration.
 
 Secrets (Keycloak TLS material, the console OIDC client secret) are created with `oc create` commands from the guide — they are deliberately NOT in git.

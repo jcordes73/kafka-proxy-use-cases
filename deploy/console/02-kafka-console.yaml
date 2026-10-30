@@ -1,6 +1,6 @@
-# deploy/console/02-kafka-console.yaml — Steps 13.2 + 13.3 + 15.7 (openshift-setup.md)
+# deploy/console/02-kafka-console.yaml — Steps 8.2 + 8.3 + 1.7 (openshift-setup.md)
 # Console connected to the PROXY's virtual cluster (never the brokers — the
-# Step 0.4 DMZ would deny it anyway), secured with Keycloak OIDC (kafka-console
+# Step 3.4 DMZ would deny it anyway), secured with Keycloak OIDC (kafka-console
 # client, standard flow), reading metrics from OpenShift user-workload
 # monitoring instead of an embedded Prometheus.
 apiVersion: console.streamshub.github.com/v1alpha1
@@ -10,7 +10,7 @@ metadata:
   namespace: kafka-console
 spec:
   hostname: kafka-console.${OPENSHIFT_APPS_DOMAIN}
-  # Step 15.7 — read metrics from the user-workload Prometheus (no embedded instance)
+  # Step 1.7 — read metrics from the user-workload Prometheus (no embedded instance)
   metricsSources:
     - name: uwm-prometheus
       type: openshift-monitoring
@@ -21,11 +21,11 @@ spec:
       metricsSource: uwm-prometheus
       properties:
         values:
-          # port is operator-allocated (guide Step 11)
+          # port is operator-allocated (guide Step 6.4)
           - name: bootstrap.servers
             value: kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292
-          # Step 13.2 (docs/05-console.md) — the proxied tls listener requires
-          # SASL/OAUTHBEARER (Step 0.2): the console's Kafka connection uses the
+          # Step 8.2 (docs/08-console.md) — the proxied tls listener requires
+          # SASL/OAUTHBEARER (Step 3.2): the console's Kafka connection uses the
           # kafka-console-kafka Keycloak service-account client via the native
           # OAuth handler. Create the Secret first (the realm import does not
           # create Kubernetes Secrets):
@@ -46,13 +46,13 @@ spec:
                 key: client-secret
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
-        # The virtual cluster ingress speaks TLS (guide Step 5): client props
-        # from the console-kafka-tls ConfigMap (Step 13.2) — every key becomes
+        # The virtual cluster ingress speaks TLS (guide Step 6.4): client props
+        # from the console-kafka-tls ConfigMap (Step 8.2) — every key becomes
         # a Kafka client property, including the proxy CA as a PEM trust store.
         valuesFrom:
           - configMapRef:
               name: console-kafka-tls
-  # Step 13.3 — secure the console UI with Keycloak (kafka-console client).
+  # Step 8.3 — secure the console UI with Keycloak (kafka-console client).
   # The realm import (deploy/keycloak/04-kafka-realm-import.yaml) carries the
   # matching redirect URI and the `demo` user mapped to the administrators role.
   security:
@@ -64,9 +64,9 @@ spec:
           secretKeyRef:
             name: kafka-console-oidc-secret
             key: client-secret
-      # Keycloak's served certificate is self-signed (Step 1.3) — the console
+      # Keycloak's served certificate is self-signed (Step 2.3) — the console
       # JVM needs it as a trust anchor to reach the OIDC endpoints. The
-      # keycloak-ingress-ca ConfigMap is created in Step 13.3.
+      # keycloak-ingress-ca ConfigMap is created in Step 8.3.
       trustStore:
         type: PEM
         content:
@@ -77,6 +77,7 @@ spec:
     subjects:
       - include:
           - demo
+          - kafka-admin
         roleNames:
           - administrators
     roles:

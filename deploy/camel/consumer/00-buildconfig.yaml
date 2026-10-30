@@ -1,4 +1,4 @@
-# deploy/camel/consumer/00-buildconfig.yaml — Step 14.4 (openshift-setup.md)
+# deploy/camel/consumer/00-buildconfig.yaml — Step 9.4 (openshift-setup.md)
 # In-cluster image build alternative to `podman build && podman push`:
 # binary (from-dir) build with a Docker strategy. Start it with:
 #

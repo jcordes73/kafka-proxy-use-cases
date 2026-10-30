@@ -1,4 +1,4 @@
-# deploy/proxy/02-kafkaproxy.yaml — Step 4 (openshift-setup.md)
+# deploy/proxy/02-kafkaproxy.yaml — Step 6.3 (openshift-setup.md)
 # The proxy itself. An empty spec creates a proxy with default configuration;
 # the operator creates a Deployment named after this resource (`simple`).
 kind: KafkaProxy

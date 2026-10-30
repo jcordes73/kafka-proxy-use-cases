@@ -1,0 +1,14 @@
+# deploy/observability/00-cluster-monitoring-config.yaml — Step 1.1 (docs/01-user-workload-monitoring.md)
+# Enable monitoring for user-defined projects (the user-workload monitoring
+# stack). Cluster-admin, once. This is the FIRST deployment of the guide —
+# before Keycloak and the Kafka cluster — it has no component dependencies,
+# and deploying it first means every component's metrics are collected from
+# the moment it deploys.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true

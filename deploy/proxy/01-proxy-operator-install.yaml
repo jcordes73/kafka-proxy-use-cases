@@ -1,4 +1,4 @@
-# deploy/proxy/01-proxy-operator-install.yaml — Steps 2–3 (openshift-setup.md)
+# deploy/proxy/01-proxy-operator-install.yaml — Steps 6.1–6.2 (openshift-setup.md)
 # Kroxylicious (Streams for Apache Kafka Proxy) operator: CRDs + Namespace + RBAC + Deployment.
 # Derived from the upstream release install file; namespace rewritten kroxylicious-operator -> kafka-proxy.
 

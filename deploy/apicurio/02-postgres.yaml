@@ -1,11 +1,11 @@
-# deploy/apicurio/02-postgres.yaml — Step 17.2 (openshift-setup.md)
+# deploy/apicurio/02-postgres.yaml — Step 5.2 (openshift-setup.md)
 # Dev-only ephemeral PostgreSQL for Apicurio Registry (mirrors the Keycloak
-# pattern from Step 1.2). Data is lost on pod restart — use a persistent,
+# pattern from Step 2.2). Data is lost on pod restart — use a persistent,
 # supported database for anything beyond development.
 #
 # storage.type: postgresql is one of the Apicurio Registry 3 storage options
 # (kafkasql, kubernetesops, mysql, postgresql). kafkasql would reuse the Kafka
-# cluster but requires widening the Step 0.4 DMZ NetworkPolicy to admit the
+# cluster but requires widening the Step 3.4 DMZ NetworkPolicy to admit the
 # registry namespace — postgresql keeps the DMZ closed.
 ---
 apiVersion: apps/v1

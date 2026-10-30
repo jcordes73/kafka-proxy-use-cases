@@ -1,9 +1,11 @@
-# deploy/apicurio/04-netpol-dmz.yaml — Step 17.3 (openshift-setup.md)
-# DMZ lockdown for Apicurio Registry, mirroring the Kafka pattern (Step 0.4):
+# deploy/apicurio/04-netpol-dmz.yaml — Step 5.3 (openshift-setup.md)
+# DMZ lockdown for Apicurio Registry, mirroring the Kafka pattern (Step 3.4):
 # default-deny + same-namespace + proxy-namespace-only on the REST port (8080).
 # The operator-generated NetworkPolicy (allow-all on 8080/9000) is disabled in
 # 03-registry.yaml — this policy set replaces it.
-# The UI keeps same-namespace access only; browse it with `oc port-forward`.
+# Routes (Step 5.2 ingress): the OpenShift router (openshift-ingress
+# namespace) reaches the app/UI components on 8080 for the registry Route
+# traffic; the UI keeps same-namespace access otherwise.
 ---
 # 1. Default deny: no ingress to registry pods at all
 kind: NetworkPolicy
@@ -50,6 +52,32 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kafka-proxy
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# 3b. Registry Routes (Step 5.2): the OpenShift router reaches the app and UI
+# components on 8080 (the browser-facing Route traffic)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: apicurio-registry-allow-router
+  namespace: kafka-registry
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: apicurio-registry
+  ingress:
+    - from:
+        # the router is hostNetwork — its traffic is attributed via the
+        # policy-group label, not the namespace name (OpenShift-documented
+        # way to admit the default router through a NetworkPolicy)
+        - namespaceSelector:
+            matchLabels:
+              policy-group.network.openshift.io/ingress: ""
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-ingress
       ports:
         - port: 8080
           protocol: TCP

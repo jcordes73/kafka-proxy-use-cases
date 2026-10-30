@@ -1,4 +1,4 @@
-# deploy/keycloak/01-kafka-auth-operator.yaml — Step 1.1 (openshift-setup.md)
+# deploy/keycloak/01-kafka-auth-operator.yaml — Step 2.1 (openshift-setup.md)
 # Namespace + OperatorGroup + Subscription for the Red Hat build of Keycloak
 # operator, applied as a single transaction (the OperatorGroup must exist when
 # the Subscription is validated).

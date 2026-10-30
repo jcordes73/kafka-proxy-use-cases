@@ -1,11 +1,46 @@
-# deploy/observability/02-kafka-podmonitor.yaml — Step 15.3 (openshift-setup.md)
+# deploy/observability/02-kafka-podmonitor.yaml — Step 1.3 (openshift-setup.md)
 # Scrape the broker metrics endpoint (strimziMetricsReporter, port 9404,
 # named tcp-prometheus) and map the Strimzi pod labels onto Prometheus labels.
+#
+# NOTE: one PodMonitor per broker namespace. OpenShift's user-workload
+# monitoring sets `ignoreNamespaceSelectors: true` on its Prometheus instance
+# (a security default), so a PodMonitor's cross-namespace `namespaceSelector`
+# is ignored — targets are only discovered in the PodMonitor's own namespace.
+# Therefore each broker cluster namespace gets its own PodMonitor.
+---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
   name: kafka-resources-metrics
-  namespace: kafka
+  namespace: kafka-cluster-1
+  labels:
+    app: strimzi
+spec:
+  selector:
+    matchExpressions:
+      - key: "strimzi.io/kind"
+        operator: In
+        values: ["Kafka"]
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+      relabelings:
+        - separator: ;
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+          action: labelmap
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+          action: replace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+          action: replace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-resources-metrics
+  namespace: kafka-cluster-2
   labels:
     app: strimzi
 spec:

@@ -1,15 +1,15 @@
-# Step 19: Demo Scenarios
+# Step 11: Demo Scenarios
 
-> [↑ Setup overview](../openshift-setup.md) · prev: [Step 18: MirrorMaker 2](10-mirrormaker2.md)
+> [↑ Setup overview](../openshift-setup.md) · prev: [Step 10: Custom filter](10-custom-filter.md)
 
-Ready-made walkthroughs for demonstrating the stack. Scenarios 1–5 and 12–14 need **no new infrastructure** — they exercise what is already deployed (see the [steps 0–18](../openshift-setup.md)). Scenarios 6–8 and 11 apply a demo manifest from [`deploy/demos/`](../deploy/README.md) that **replaces** the `kafka-cluster-1` `VirtualKafkaCluster` wiring — revert each with `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`.
+Ready-made walkthroughs for demonstrating the stack. Scenarios 1, 3–5 and 12–14 need **no new infrastructure** — they exercise what is already deployed (see the [steps 6–20](../openshift-setup.md)). Scenarios 6–8 and 11 apply a demo manifest from [`deploy/demos/`](../deploy/README.md) that **replaces** the `kafka-cluster-1` `VirtualKafkaCluster` wiring — revert each with `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`. Scenario 2 applies a manifest that **adds** a demo topic and a Record Validation filter (revert by removing the `filterRefs` entry).
 
 All commands run from the **repository root**.
 
 | # | Scenario | Needs |
 |---|---|---|
 | 1 | Token revocation (OAuth payoff) | — |
-| 2 | Record Validation end-to-end | already deployed |
+| 2 | Record Validation end-to-end | `deploy/demos/02-record-validation-demo.yaml` |
 | 3 | Live migration / cutover (MM2) | — |
 | 4 | DMZ pivot attempt | — |
 | 5 | Stable endpoints | — |
@@ -19,8 +19,8 @@ All commands run from the **repository root**.
 | 9 | Multi-tenant virtual clusters | `deploy/demos/09-multi-tenant-virtual-clusters.yaml` (optional) |
 | 10 | MM2 failover / failback | `deploy/demos/10-mm2-failover.yaml` |
 | 11 | Record Encryption at rest | `deploy/demos/11-record-encryption.yaml` (Vault dev) |
-| 12 | Schema evolution | already deployed |
-| 13 | Custom filter | docs [Step 16](08-custom-filter.md) |
+| 12 | Schema evolution | registry from Step 5.4 |
+| 13 | Custom filter | docs [Step 10](10-custom-filter.md) |
 | 14 | Disaster recovery active/passive | — |
 
 ## Demo 1 — Token revocation (the OAuth payoff)
@@ -42,33 +42,52 @@ curl -X PUT -H "Authorization: Bearer ${ADMIN_TOKEN}" -H "Content-Type: applicat
   -d '{"enabled": false}' "https://${KEYCLOAK_HOST}/admin/realms/kafka/clients/${CLIENT_UUID}"
 ```
 
-The already-issued token stays valid for its lifetime (5 min — `accessTokenLifespan: 300` in the realm import). The Kafka CLI pod from [Step 11](03-proxy.md#step-11-apply-and-verify) keeps working until its cached token expires, then fails — **access stops at the next token expiry with zero changes to the stack**. Re-enable the client to restore access.
+The already-issued token stays valid for its lifetime (5 min — `accessTokenLifespan: 300` in the realm import). The Kafka CLI pod from [Step 6.10](06-proxy.md#610--apply-and-verify) keeps working until its cached token expires, then fails — **access stops at the next token expiry with zero changes to the stack**. Re-enable the client to restore access.
 
 ## Demo 2 — Record Validation end-to-end
 
-Already deployed ([`deploy/apicurio/05-record-validation-demo.yaml`](../deploy/apicurio/05-record-validation-demo.yaml) — [Step 17](09-apicurio-registry.md#step-17-deploy-apicurio-registry-and-validate-records-record-validation)):
+> **Deployment order:** the demo topic, filter, and wiring deploy **after the proxy** (they wire `filterRefs` into the proxy's virtual cluster); with the demo scenarios at Step 11 that prerequisite is always satisfied. The schema (`APICURIO_CONTENT_ID`) comes from [Step 5.4](05-apicurio-registry.md#54--register-a-schema).
+
+[`deploy/demos/02-record-validation-demo.yaml`](../deploy/demos/02-record-validation-demo.yaml) declares the demo topic and the `KafkaProtocolFilter` — a `RecordValidation` rule scoped to `record-validation-demo` that checks record **values** against the registered schema (`apicurioId` = the contentId from Step 5.4). `allowNulls`/`allowEmpty` sit **inside** the rule definition (as siblings of `schemaValidationConfig`), and there is no `defaultRule` — all other topics pass through unvalidated:
 
 ```bash
-# Valid JSON: accepted
-curl -X POST http://my-bridge-bridge-service.kafka-http-bridge.svc.cluster.local:8080/topics/demo-topic \
-  -H "Content-Type: application/vnd.kafka.json.v2+json" \
-  -d '{"records":[{"value":{"id":1,"payload":"hello"}}]}'
+export APICURIO_CONTENT_ID=1
+envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
+# deploy/proxy/05-virtualkafkacluster.yaml already wires filterRefs
+# [record-validation] on kafka-cluster-1 — the patch below is idempotent:
+oc -n kafka-proxy patch virtualkafkacluster kafka-cluster-1 --type=merge \
+  -p '{"spec":{"filterRefs":[{"name":"record-validation"}]}}'
+oc -n kafka-proxy rollout status deploy/simple --timeout=180s   # proxy reconfigures
+```
 
-# Malformed JSON: rejected — the whole produce request fails
-curl -X POST http://my-bridge-bridge-service.kafka-http-bridge.svc.cluster.local:8080/topics/demo-topic \
-  -H "Content-Type: application/vnd.kafka.json.v2+json" \
-  -d '{"records":[{"value":"not an object"}]}'
-# -> Broker: Broker failed to validate record
+> ⚠️ **Config shape matters — a malformed filter crash-loops the proxy.** The deployed upstream 0.25.1 proxy rejects unknown filter config fields at startup (the pod enters `CrashLoopBackOff` until the `KafkaProtocolFilter` is corrected). Two gotchas verified live: `allowNulls`/`allowEmpty` belong inside the rule definition, and the `wireFormatVersion` option shown in the Red Hat 3.2 guide does not exist in 0.25.1 — omit it.
+
+Produce through the proxy with `kcat` — a conforming record is delivered, a non-conforming one is rejected before the broker:
+
+```bash
+echo '{"orderId":"A-1","amount":10}' | oc run kcat-valid --rm -i --restart=Never \
+  --image=confluentinc/cp-kcat:latest -- \
+  -b kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
+  -t record-validation-demo -P -l
+# (delivered — exit 0)
+
+echo 'this is not json' | oc run kcat-invalid --rm -i --restart=Never \
+  --image=confluentinc/cp-kcat:latest -- \
+  -b kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
+  -t record-validation-demo -P -l
+# % Delivery failed for message: Broker: Broker failed to validate record
 ```
 
 Watch `kroxylicious_client_to_proxy_request_total` vs `kroxylicious_proxy_to_server_request_total` in user-workload monitoring — the rejected produce never reaches the upstream (downstream count permanently ahead).
+
+> **To disable validation:** remove the `filterRefs` entry (`oc -n kafka-proxy patch virtualkafkacluster kafka-cluster-1 --type=json --path=/spec/filterRefs --value=[]` and re-apply [`deploy/proxy/05-virtualkafkacluster.yaml`](../deploy/proxy/05-virtualkafkacluster.yaml) to restore the manifest state), and optionally delete the `KafkaProtocolFilter`. Note the 0.25.1 proxy exports no Record Validation–specific metrics — rejections are only visible client-side and in the proxy logs.
 
 ## Demo 3 — Live migration / cutover (MM2)
 
 The migration pattern from use case [7 in the guide](../README.md#7-cluster-migration--upstream-switching):
 
 1. Produce to `test-topic` via the proxy (Demo 1 client) — lands on `kafka-cluster-1`.
-2. Watch it mirror: `kafka-cluster-1.test-topic` appears on cluster-2 ([Step 18.2](10-mirrormaker2.md#182--verify-replication)).
+2. Watch it mirror: `kafka-cluster-1.test-topic` appears on cluster-2 ([Step 4.2](04-mirrormaker2.md#42--verify-replication)).
 3. Cutover — one change, in one place (repoint the virtual cluster's `KafkaService`):
 
    ```bash
@@ -81,7 +100,7 @@ The migration pattern from use case [7 in the guide](../README.md#7-cluster-migr
 
 ## Demo 4 — DMZ pivot attempt
 
-From [Step 0.4](01-kafka-cluster.md#04--restrict-kafka-ingress-to-the-proxy-namespace-dmz):
+From [Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz):
 
 ```bash
 # From an unrelated namespace: brokers are unreachable — TIMEOUT
@@ -183,7 +202,7 @@ The offset-translation variant of the replication:
 
 2. Produce with a consumer group active on the source (the Camel consumer, `groupId=camel-consumer`).
 3. Check the translated offsets on the target: `kafka-cluster-1.camel-consumer` in the `mm2-checkpoints.internal` topic / the console.
-4. **Failover**: switch the `KafkaService` upstream (Demo 3, step 3) — the consumer resumes at the translated offset on the target, not from scratch.
+4. **Failover**: switch the `KafkaService` upstream (Demo 3, step 7) — the consumer resumes at the translated offset on the target, not from scratch.
 5. **Failback**: switch the upstream back; reverse replication can be added by mirroring in the other direction.
 6. Revert: `oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml`
 
@@ -221,7 +240,7 @@ Envelope encryption at the proxy with a dev-mode Vault as KMS — **the wow-fact
 
 ## Demo 12 — Schema evolution
 
-Extends Demo 2 ([Step 17.5](09-apicurio-registry.md#175--demo-topic-and-record-validation-filter)):
+Extends Demo 2:
 
 1. Produce a valid record (accepted).
 2. Change the JSON schema in Apicurio Registry (UI or REST — e.g. make a field required).
@@ -230,7 +249,7 @@ Extends Demo 2 ([Step 17.5](09-apicurio-registry.md#175--demo-topic-and-record-v
 
 ## Demo 13 — Custom filter
 
-Write, build, and deploy a custom filter in the data path — the full extension story ([Step 16](08-custom-filter.md)):
+Write, build, and deploy a custom filter in the data path — the full extension story ([Step 10](10-custom-filter.md)):
 
 1. Generate a filter project with the upstream Maven archetype, implement a small transformation (e.g. inject a `demo-filter` header, or mask a field).
 2. Build in-cluster (`deploy/custom-filter/01-buildconfig.yaml`), wire a `KafkaProtocolFilter` ([`deploy/custom-filter/02-kafkaprotocolfilter.yaml`](../deploy/custom-filter/02-kafkaprotocolfilter.yaml)) into the virtual cluster's `filterRefs`.
@@ -242,9 +261,9 @@ cluster-2 as the passive replica:
 
 1. MM2 keeps cluster-2 in sync (Demo 3); with Demo 10's `checkpointConnector`, consumer offsets are translated too.
 2. "Lose" the source: `oc scale kafka kafka-cluster-1 -n kafka-cluster-1 --replicas=0` (dev only).
-3. Switch the proxy upstream to cluster-2 (`KafkaService`, Demo 3 step 3) — clients ride through on the same virtual-cluster bootstrap; consumers resume at the translated offsets (Demo 10).
+3. Switch the proxy upstream to cluster-2 (`KafkaService`, Demo 3 step 7) — clients ride through on the same virtual-cluster bootstrap; consumers resume at the translated offsets (Demo 10).
 4. "Recover": scale cluster-1 back, reverse-mirror, and cut back — the rollback is switching the upstream again.
 
 ## The combined narrative
 
-> (5) stable endpoints → (1) OAuth-secured data path → (1) revoke a client live → (2/12) validation/contract enforcement at the proxy → (3/14) mirror + cutover with clients unaware → (6/7/8) authorization, isolation, and token checks at the edge → (11) encryption at rest the brokers can't read → all of it visible in (15) the dashboards ([Step 15](07-observability.md)).
+> (5) stable endpoints → (1) OAuth-secured data path → (1) revoke a client live → (2/12) validation/contract enforcement at the proxy → (3/14) mirror + cutover with clients unaware → (6/7/8) authorization, isolation, and token checks at the edge → (11) encryption at rest the brokers can't read → all of it visible in (15) the dashboards ([Step 1](01-user-workload-monitoring.md)).
