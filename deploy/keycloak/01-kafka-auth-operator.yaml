@@ -30,6 +30,8 @@ metadata:
   namespace: kafka-auth
 spec:
   channel: stable-v26.4
+  # Pinned to the tested CSV (Step "Components and Tested Versions" in README.md)
+  startingCSV: rhbk-operator.v26.4.16-opr.1
   name: rhbk-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace

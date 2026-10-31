@@ -26,6 +26,8 @@ spec:
           kind: Secret
   filterRefs:
     - name: record-validation
+    - name: oauth-validation
+    - name: kafka-authorization
 ---
 kind: VirtualKafkaCluster
 apiVersion: kroxylicious.io/v1alpha1
@@ -44,3 +46,9 @@ spec:
         certificateRef:
           name: proxy-tls
           kind: Secret
+  # Same ACL chain as kafka-cluster-1 (without record-validation): OauthBearerValidation
+  # builds the authenticated subject, Authorization enforces the least-privilege
+  # ACL rules (deploy/proxy/06-kafka-acl.yaml) before the brokers.
+  filterRefs:
+    - name: oauth-validation
+    - name: kafka-authorization

@@ -49,6 +49,8 @@ metadata:
   namespace: kafka
 spec:
   channel: amq-streams-3.2.x
+  # Pinned to the tested CSV (Step "Components and Tested Versions" in README.md)
+  startingCSV: amqstreams.v3.2.2-5
   name: amq-streams
   source: redhat-operators
   sourceNamespace: openshift-marketplace

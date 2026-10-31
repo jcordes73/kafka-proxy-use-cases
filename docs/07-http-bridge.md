@@ -89,7 +89,7 @@ oc get services my-bridge-bridge-service -n kafka-http-bridge
 ```bash
 # Produce a JSON record through the bridge (and therefore the proxy)
 oc run bridge-producer --rm -i --restart=Never --image=curlimages/curl -n kafka-http-bridge -- \
-  -X POST http://my-bridge-bridge-service:8080/topics/test-topic \
+  -X POST http://my-bridge-bridge-service:8080/topics/topic-A \
   -H "Content-Type: application/vnd.kafka.json.v2+json" \
   -d '{"records":[{"value":"hello via bridge + proxy"}]}'
 ```
@@ -104,7 +104,7 @@ oc run bridge-consumer --rm -i --restart=Never --image=curlimages/curl -n kafka-
 oc run bridge-consumer --rm -i --restart=Never --image=curlimages/curl -n kafka-http-bridge -- \
   -X POST http://my-bridge-bridge-service:8080/consumers/bridge-consumer-group/instances/bridge-consumer/subscription \
   -H "Content-Type: application/vnd.kafka.v2+json" \
-  -d '{"topics":["test-topic"]}'
+  -d '{"topics":["topic-A"]}'
 
 oc run bridge-consumer --rm -i --restart=Never --image=curlimages/curl -n kafka-http-bridge -- \
   -H "Accept: application/vnd.kafka.json.v2+json" \

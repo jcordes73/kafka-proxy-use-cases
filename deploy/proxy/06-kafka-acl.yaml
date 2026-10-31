@@ -1,0 +1,99 @@
+# deploy/proxy/06-kafka-acl.yaml — ACLs on the proxy layer (docs/06-proxy.md)
+# Least-privilege authorization enforced BEFORE the brokers (upstream 0.25.1
+# Authorization filter): ACL rules live in the kafka-acl-rules ConfigMap and
+# are referenced via the operator's ${configmap:...} interpolation — apply
+# with the variable-list form so only the domain is substituted:
+#   envsubst '$OPENSHIFT_APPS_DOMAIN' < deploy/proxy/06-kafka-acl.yaml | oc apply -f -
+# (full `envsubst` would break the interpolation ref; plain `oc apply` would
+# leave the domain variable unsubstituted).
+#
+# The Authorization filter needs the authenticated subject, provided by the
+# OauthBearerValidation filter: it validates client JWTs against Keycloak's
+# JWKS (rejecting invalid/expired tokens at the proxy) and builds the subject
+# from the token's preferred_username claim (service-account-<clientId>) —
+# the broker still decides whether authentication succeeds (validated
+# passthrough), the proxy enforces authorization on top.
+#
+# Policy (least-privilege, deny-by-default via `otherwise deny`):
+#   - infrastructure clients (kafka-bridge, kafka-console-kafka, kafka-admin):
+#     full access
+#   - camel-producer: WRITE on topic-A only (payload conforms to the
+#     record-validation schema, so it passes topic-A's validation)
+#   - camel-consumer: READ on topic-A + its consumer group only
+#   - demo-client and every other principal: denied
+# NOTE: this only affects traffic THROUGH the proxy — clients connecting
+# directly to the brokers (MM2, internal listeners) are unaffected.
+#
+# Rules file syntax: deny rules before allow rules, ends with `otherwise deny`
+# (all rules files are deny-by-default; the keyword ALL is not supported).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-acl-rules
+  namespace: kafka-proxy
+data:
+  acl-rules.txt: |
+    from io.kroxylicious.filter.authorization import TopicResource as Topic, GroupResource as Group, TransactionalIdResource as TransactionalId;
+
+    // Infrastructure clients — full access (data path, console, administration)
+    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Topic with name like "*";
+    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Group with name like "*";
+    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * TransactionalId with name like "*";
+
+    // Camel clients — least privilege (Step 9 routes, topic-A)
+    allow User with name = "service-account-camel-producer" to WRITE Topic with name = "topic-A";
+    allow User with name = "service-account-camel-consumer" to READ Topic with name = "topic-A";
+    allow User with name = "service-account-camel-consumer" to READ Group with name = "camel-consumer";
+
+    // Demo data-path users (Keycloak password users, Step 2.4) — READ on a
+    // topic also requires a Group READ (consumers join a group), so each user
+    // gets a scoped consumer-group ACL alongside its topic grant.
+    allow User with name in {"kafka-user-a", "kafka-user-b"} to READ Topic with name = "topic-A";
+    allow User with name = "kafka-user-a" to WRITE Topic with name = "topic-A";
+    allow User with name = "kafka-user-a" to READ Group with name = "kafka-user-a-group";
+    allow User with name = "kafka-user-b" to READ Group with name = "kafka-user-b-group";
+    allow User with name = "kafka-user-c" to {READ, WRITE} Topic with name = "topic-C";
+    allow User with name = "kafka-user-c" to READ Group with name = "kafka-user-c-group";
+
+    otherwise deny;
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: oauth-validation
+  namespace: kafka-proxy
+spec:
+  type: OauthBearerValidation
+  configTemplate:
+    # Keycloak's JWKS endpoint (in-cluster, same URL the brokers use — Step 3.2)
+    jwksEndpointUrl: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs
+    # Keycloak service-account tokens carry aud: "account" (default) — the
+    # validator requires an audience (omitting it NPEs the BrokerJwtValidator)
+    expectedAudience: account
+    # the token issuer. ⚠️ Keycloak builds iss from the endpoint the CLIENT used
+    # for the token request: in-cluster clients (camel/bridge/console) fetch
+    # tokens via the internal http keycloak-http Service and get
+    #   http://keycloak-ingress-kafka-auth...:8080/realms/kafka
+    # (the realm hostname the operator assigned) — while a request to the
+    # https Route yields https://.../realms/kafka. The internal-URL issuer is
+    # canonical: the broker's oauth.valid.issuer.uri expects it too.
+    expectedIssuer: http://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}:8080/realms/kafka
+    # Subject = preferred_username (service-account-<clientId>) instead of the
+    # JWT `sub` UUID — the SASL authorized ID defaults to `sub`, which the
+    # default subject builder turns into an unreadable UUID principal that the
+    # ACL rules below cannot match (verified live). preferred_username matches
+    # the principals the brokers themselves derive (Step 3.2 oauth.username.claim).
+    subClaimName: preferred_username
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: kafka-authorization
+  namespace: kafka-proxy
+spec:
+  type: Authorization
+  configTemplate:
+    authorizer: AclAuthorizerService
+    authorizerConfig:
+      aclFile: ${configmap:kafka-acl-rules:acl-rules.txt}

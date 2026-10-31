@@ -33,6 +33,8 @@ metadata:
   namespace: kafka-registry
 spec:
   channel: 3.2.x
+  # Pinned to the tested CSV (Step "Components and Tested Versions" in README.md)
+  startingCSV: apicurio-registry-3.v3.2.6-r2
   name: apicurio-registry-3
   source: redhat-operators
   sourceNamespace: openshift-marketplace

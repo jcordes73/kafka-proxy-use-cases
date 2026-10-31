@@ -196,11 +196,20 @@ spec:
 
 Start with **no filters** to validate basic connectivity, then add one at a time. See the [use case catalog](../README.md#use-case-catalog) for Record Encryption and Record Validation configuration.
 
+### ACLs on the proxy layer (as deployed here)
+
+The upstream 0.25.1 **`Authorization` filter** enforces ACL rules on client requests **before the brokers** (deny-by-default, on top of any broker-side checks — both must allow). Two filters make it work, defined in [`deploy/proxy/06-kafka-acl.yaml`](../deploy/proxy/06-kafka-acl.yaml):
+
+- **`OauthBearerValidation`** — validates client JWTs against Keycloak's JWKS (in-cluster `keycloak-http.kafka-auth.svc.../protocol/openid-connect/certs`, the same endpoint the brokers use) and builds the authenticated subject. Three config fields matter (all verified live): **`subClaimName: preferred_username`** — without it the SASL authorized ID is the JWT `sub` (a UUID), which the default subject builder turns into an unreadable principal that ACL rules cannot match; **`expectedAudience: account`** — Keycloak service-account tokens carry `aud: "account"`, and omitting the audience NPEs Kafka's `BrokerJwtValidator` at proxy startup; and **`expectedIssuer`** — with an audience set the issuer check runs, and the expected value must **exactly equal the token `iss` string** (no trailing-slash or scheme tolerance). The `iss` gotcha: Keycloak builds `iss` from the endpoint the **client** used for its token request — in-cluster clients (camel/bridge/console, and the internal `keycloak-http` Service generally) get `http://keycloak-ingress-kafka-auth.<domain>:8080/realms/kafka` (the realm hostname the operator assigned), while a request to the **https Route** yields `https://keycloak-ingress-kafka-auth.<domain>/realms/kafka`. Pick one and point every client at the matching token endpoint; the internal-URL issuer is canonical here (the broker's `oauth.valid.issuer.uri` expects it too). Because `expectedIssuer` contains the cluster domain, apply with the variable-list form of envsubst — `envsubst '$OPENSHIFT_APPS_DOMAIN' < deploy/proxy/06-kafka-acl.yaml | oc apply -f -` — which substitutes only that variable and leaves the `${configmap:...}` interpolation ref intact for the operator.
+- **`Authorization`** — `type: Authorization`, `authorizer: AclAuthorizerService`, `authorizerConfig.aclFile: ${configmap:kafka-acl-rules:acl-rules.txt}`. An **experimental filter** (the proxy logs a warning). Rules live in the `kafka-acl-rules` ConfigMap: `deny` rules first, then `allow`, ending with `otherwise deny;` — the grammar requires a resource predicate (`to * Topic with name like "*";`; a bare `to * Topic;` fails with `mismatched input ';' expecting 'with'`, verified live), `in {"a","b"}` for user sets, and the keyword `ALL` is not supported.
+
+The deployed least-privilege policy: infrastructure clients (`service-account-kafka-bridge`, `service-account-kafka-console-kafka`, `kafka-admin`) get full access; `service-account-camel-producer` gets `WRITE` on `topic-A`; `service-account-camel-consumer` gets `READ` on `topic-A` + its consumer group; demo data-path users get scoped grants (`kafka-user-a`: `{READ, WRITE}` on `topic-A` + `READ` on group `kafka-user-a-group`; `kafka-user-b`: `READ` on `topic-A` + `READ` on group `kafka-user-b-group`; `kafka-user-c`: `{READ, WRITE}` on `topic-C` + `READ` on group `kafka-user-c-group` — a consuming client needs the **group** ACL too, verified live with password-grant tokens: user-a produces to `topic-A` and user-c to `topic-C`, both users consume via their groups, and cross-topic produces (user-b → `topic-A`, anyone → `topic-B`) are rejected with `TopicAuthorizationException`); **everything else is denied** (including `demo-client`). Clients connecting directly to the brokers (MM2, internal listeners) are unaffected. Wire the filters with `filterRefs` on both virtual clusters (`record-validation` additionally on `kafka-cluster-1`); a malformed rules file or unknown config field crash-loops the proxy (`CrashLoopBackOff`) until corrected.
+
 ## 6.7 — Create the VirtualKafkaCluster
 
 The `VirtualKafkaCluster` wires everything together. All referenced resources must be in the same namespace. Filter order matters: client requests pass through filters from index `0` to `n`; broker responses pass through in reverse order. An empty/omitted `filterRefs` passes traffic through unchanged.
 
-The ready-to-apply manifest is [`deploy/proxy/05-virtualkafkacluster.yaml`](../deploy/proxy/05-virtualkafkacluster.yaml) — **one virtual cluster per backend cluster** (`kafka-cluster-1` and `kafka-cluster-2`), each wiring `proxyRef: simple`, its `targetKafkaServiceRef`, its own `clusterIP` ingress (`cluster-ip-1` / `cluster-ip-2` with a shared TLS `certificateRef: proxy-tls`, applied in [Step 6.8](#68--tls-certificates)), and `filterRefs` — `[record-validation]` on `kafka-cluster-1` (created in [Step 5](05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation); if you are running strictly in order, remove that ref until Step 5) and none on `kafka-cluster-2` (traffic passes through unchanged):
+The ready-to-apply manifest is [`deploy/proxy/05-virtualkafkacluster.yaml`](../deploy/proxy/05-virtualkafkacluster.yaml) — **one virtual cluster per backend cluster** (`kafka-cluster-1` and `kafka-cluster-2`), each wiring `proxyRef: simple`, its `targetKafkaServiceRef`, its own `clusterIP` ingress (`cluster-ip-1` / `cluster-ip-2` with a shared TLS `certificateRef: proxy-tls`, applied in [Step 6.8](#68--tls-certificates)), and `filterRefs` — `[record-validation, oauth-validation, kafka-authorization]` on `kafka-cluster-1` and `[oauth-validation, kafka-authorization]` on `kafka-cluster-2` (`record-validation` created in [Step 5](05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation); if you are running strictly in order, remove those refs until their steps):
 
 ```bash
 oc apply -f deploy/proxy/02-kafkaproxy.yaml -f deploy/proxy/03-kafkaproxyingress.yaml \
@@ -354,10 +363,10 @@ sasl.oauthbearer.token.endpoint.url=http://keycloak-http.kafka-auth.svc.cluster.
 EOF
        echo "hello through the proxy (SASL_PLAINTEXT)" | bin/kafka-console-producer.sh \
          --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-         --topic test-topic --command-config /tmp/client.properties
+         --topic topic-A --command-config /tmp/client.properties
        bin/kafka-console-consumer.sh \
          --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-         --topic test-topic --from-beginning --timeout-ms 10000 \
+         --topic topic-A --from-beginning --timeout-ms 10000 \
          --command-config /tmp/client.properties
      '
    ```
@@ -431,7 +440,7 @@ ssl.truststore.type=PEM
 EOF
        echo "hello through the proxy (TLS)" | bin/kafka-console-producer.sh \
          --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-         --topic test-topic --command-config /tmp/client.properties
+         --topic topic-A --command-config /tmp/client.properties
      '
    ```
 

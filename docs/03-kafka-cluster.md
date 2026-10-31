@@ -31,16 +31,18 @@ If you don't already have a Kafka cluster, deploy one using **Streams for Apache
      -n kafka --timeout=180s
    ```
 
-**Alternative: OperatorHub (OLM).** On clusters with the `redhat-operators` catalog, install the operator as the `amq-streams` package from the `amq-streams-3.2.x` channel (Streams for Apache Kafka 3.2) with `installPlanApproval: Manual`. The operator watches the namespaces of its `OperatorGroup` — to watch additional namespaces later ([Step 7.1](07-http-bridge.md#71--create-the-namespace-and-extend-the-cluster-operator-watch)), add them to the OperatorGroup's `spec.targetNamespaces`; OLM regenerates the RBAC and rolls the operator automatically. A ready-to-apply Namespace + OperatorGroup + Subscription file is in [`deploy/kafka/00-cluster-operator-olm.yaml`](../deploy/kafka/00-cluster-operator-olm.yaml).
+**Alternative: OperatorHub (OLM).** On clusters with the `redhat-operators` catalog, install the operator as the `amq-streams` package from the `amq-streams-3.2.x` channel (Streams for Apache Kafka 3.2) with `installPlanApproval: Manual`. The subscription in [`deploy/kafka/00-cluster-operator-olm.yaml`](../deploy/kafka/00-cluster-operator-olm.yaml) also **pins the exact tested CSV** via `startingCSV: amqstreams.v3.2.2-5` (see [Components and Tested Versions](../README.md#components-and-tested-versions) in the README) — Manual approval prevents OLM from auto-upgrading to a newer CSV in the channel, and `startingCSV` fixes the version a fresh install lands on. The operator watches the namespaces of its `OperatorGroup` — to watch additional namespaces later ([Step 7.1](07-http-bridge.md#71--create-the-namespace-and-extend-the-cluster-operator-watch)), add them to the OperatorGroup's `spec.targetNamespaces`; OLM regenerates the RBAC and rolls the operator automatically. A ready-to-apply Namespace + OperatorGroup + Subscription file is in [`deploy/kafka/00-cluster-operator-olm.yaml`](../deploy/kafka/00-cluster-operator-olm.yaml).
 
 ## 3.2 — Create the Kafka cluster
 
 Kafka runs exclusively in **KRaft mode** (no ZooKeeper): you define the cluster with a `Kafka` resource plus `KafkaNodePool` resources. Nodes take the role of **broker**, **controller**, or both (dual-role). This dev example uses a single dual-role node pool with ephemeral storage.
 
-The ready-to-apply manifests are [`deploy/kafka/01-kafka-nodepool.yaml`](../deploy/kafka/01-kafka-nodepool.yaml) and [`deploy/kafka/02-kafka.yaml`](../deploy/kafka/02-kafka.yaml):
+The ready-to-apply manifests are [`deploy/kafka/01-kafka-nodepool.yaml`](../deploy/kafka/01-kafka-nodepool.yaml) and [`deploy/kafka/02-kafka.yaml`](../deploy/kafka/02-kafka.yaml). **`02-kafka.yaml` contains `${OPENSHIFT_APPS_DOMAIN}`** (the brokers' `oauth.valid.issuer.uri`) — it must go through envsubst; plain `oc apply` leaves the literal `${...}` in the broker config and the rolled broker **crash-loops** with "Value of validIssuerUri not a valid URI" (the Kafka CR then goes NotReady, which empties `status.listeners` and breaks the console's Strimzi-kind connections):
 
 ```bash
-oc apply -f deploy/kafka/01-kafka-nodepool.yaml -f deploy/kafka/02-kafka.yaml
+export OPENSHIFT_APPS_DOMAIN=$(oc get ingress.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+envsubst '$OPENSHIFT_APPS_DOMAIN' < deploy/kafka/02-kafka.yaml | oc apply -f -
+# (01-kafka-nodepool.yaml has no variables — plain oc apply is fine)
 
 oc wait --for=condition=Ready kafka/kafka-cluster-1 -n kafka-cluster-1 --timeout=600s
 
@@ -52,7 +54,8 @@ Field notes (full manifests in the deploy files):
 
 - `KafkaNodePool` — `dual-role` nodes (`controller` + `broker` roles), `replicas: 3`, `ephemeral` storage for dev.
 - `spec.kafka.listeners` — `plain` (9092, no TLS/auth) + `tls` (9093, TLS with **SASL/OAUTHBEARER** — see the note below).
-- `spec.kafka.config` — `inter.broker.listener.name: plain` (inter-broker communication stays on the unauthenticated listener), replication factors, `min.insync.replicas`.
+- `spec.kafka.config` — `inter.broker.listener.name: plain` (inter-broker communication stays on the unauthenticated listener), replication factors, `min.insync.replicas`, and **`auto.create.topics.enable: false`** — no auto-created topics (Kafka 4.x defaults to `true`): every topic must be created explicitly (`oc create topic`, a `KafkaTopic` resource, or the console), so a misspelled or un-created topic fails on produce instead of being silently created with the defaults.
+- `spec.entityOperator` — **`topicOperator: {}`** reconciles `KafkaTopic` resources in the cluster's namespace (without it, `KafkaTopic` resources are inert — verified live). It sits under `spec`, a sibling of `kafka` — nesting it inside `spec.kafka` gets silently pruned and no operator deploys. ⚠️ The Topic Operator **cannot change a topic's replication factor**: if a topic already exists with a different RF than `spec.replicas`, reconciliation fails with "Replication factor change not supported" — the spec must match reality, or the topic must be deleted (via its `KafkaTopic`) and recreated by re-applying the manifest (how the demo topics moved from RF 1 to RF 3, [`deploy/kafka/03-topics.yaml`](../deploy/kafka/03-topics.yaml), verified live). A `userOperator: {}` can be added alongside to manage `KafkaUser` resources (not needed here — clients authenticate with Keycloak service accounts, Step 2.5).
 - `spec.kafka.metricsConfig` — Strimzi Metrics Reporter on 9404 (Step 1.3).
 - The deploy manifest creates **two** clusters (`kafka-cluster-1` and `kafka-cluster-2`), one per namespace — cluster-2 is the MirrorMaker 2 target ([Step 4](04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)).
 

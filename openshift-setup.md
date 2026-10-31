@@ -74,46 +74,50 @@ oc new-project kafka-proxy
 By the end of this guide, the stack looks like this — the **proxy and HTTP Bridge in the DMZ** as the clusters' doors, the **Kafka clusters and the optional MirrorMaker 2 replication plane in the secure backend** (Step 4):
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
 flowchart TB
     clients["Kafka clients (native)"]
     http["HTTP clients"]
     browser["Browser (UI)"]
 
     subgraph openshift["OpenShift cluster — logical separation via namespaces"]
-        subgraph proxyNs["namespace: kafka-proxy — DMZ"]
-            proxy["Proxy operator<br/>Virtual clusters 'kafka-cluster-1'/'kafka-cluster-2'<br/>clusterIP bootstraps :9292"]
-        end
-        subgraph bridgeNs["namespace: kafka-http-bridge — DMZ (exposed HTTP API, locked down)"]
-            bridge["KafkaBridge<br/>(bootstrapServers → the proxy)<br/>REST API /topics · /consumers<br/>(+ API gateway, optional)"]
-        end
-        subgraph consoleNs["namespace: kafka-console"]
-            console["Console operator + Console UI<br/>connected to the virtual cluster (Virtual label)<br/>OIDC-secured"]
-        end
-        subgraph producerNs["namespace: kafka-producer"]
-            direction TB
-            producer["Camel producer route<br/>(timer → kafka:test-topic)"]
-        end
-        subgraph consumerNs["namespace: kafka-consumer"]
-            direction TB
-            consumer["Camel consumer route<br/>(groupId=camel-consumer)"]
-        end
-        subgraph kafkaNs1["namespace: kafka-cluster-1 — secure backend (locked down)"]
-            netpol1["[Backend lockdown] NetworkPolicy (Step 3.4)<br/>Kafka ingress ONLY from the kafka-proxy DMZ<br/>+ kafka-mm2, on the listener ports"]
-            kafka1["Kafka cluster 'kafka-cluster-1' (KRaft)<br/>brokers 0–2<br/>plain 9092 · tls 9093 (OAUTHBEARER)"]
-        end
-        subgraph kafkaNs2["namespace: kafka-cluster-2 — secure backend (locked down)"]
-            netpol2["[Backend lockdown] NetworkPolicy (Step 3.4)<br/>same allowances as cluster-1"]
-            kafka2["Kafka cluster 'kafka-cluster-2' (KRaft)<br/>replication target (Step 4)"]
-        end
-        subgraph mm2Ns["namespace: kafka-mm2 — secure backend (replication, optional, Step 4)"]
-            mm2["MirrorMaker 2<br/>kafka-cluster-1 → kafka-cluster-2<br/>(replicates inside the backend)"]
+        subgraph dmz["DMZ — client-facing entry points"]
+            subgraph authNs["namespace: kafka-auth"]
+                keycloak["Red Hat build of Keycloak — realm 'kafka'<br/>service-account clients for the data path<br/>+ kafka-console client (OIDC login)"]
+            end
+            subgraph proxyNs["namespace: kafka-proxy"]
+                proxy["Proxy operator<br/>Virtual clusters 'kafka-cluster-1'/'kafka-cluster-2'<br/>clusterIP bootstraps :9292"]
+            end
+            subgraph bridgeNs["namespace: kafka-http-bridge (exposed HTTP API, locked down)"]
+                bridge["KafkaBridge<br/>(bootstrapServers → the proxy)<br/>REST API /topics · /consumers<br/>(+ API gateway, optional)"]
+            end
         end
         subgraph authNs["namespace: kafka-auth"]
             keycloak["Red Hat build of Keycloak — realm 'kafka'<br/>service-account clients for the data path<br/>+ kafka-console client (OIDC login)"]
         end
-        subgraph registryNs["namespace: kafka-registry — secure backend (locked down)"]
-            registryNetpol["[Backend lockdown] NetworkPolicy (Step 5.3)<br/>Registry ingress ONLY from the kafka-proxy DMZ,<br/>ONLY on the REST port"]
-            registry["Apicurio Registry 3<br/>schema store for Record Validation<br/>(PostgreSQL storage)"]
+        subgraph clientsSec["Clients — DMZ workloads"]
+            producer["Camel producer route<br/>(timer → kafka:topic-A)"]
+            consumer["Camel consumer route<br/>(groupId=camel-consumer)"]
+        end
+        subgraph backend["Secure backend — locked down"]
+            subgraph consoleNs["namespace: kafka-console"]
+                console["Console operator + Console UI<br/>connected to the virtual cluster (Virtual label)<br/>OIDC-secured"]
+            end
+            subgraph kafkaNs1["namespace: kafka-cluster-1"]
+                netpol1["[Backend lockdown] NetworkPolicy (Step 3.4)<br/>Kafka ingress ONLY from the kafka-proxy DMZ<br/>+ kafka-mm2, on the listener ports"]
+                kafka1["Kafka cluster 'kafka-cluster-1' (KRaft)<br/>brokers 0–2<br/>plain 9092 · tls 9093 (OAUTHBEARER)"]
+            end
+            subgraph kafkaNs2["namespace: kafka-cluster-2"]
+                netpol2["[Backend lockdown] NetworkPolicy (Step 3.4)<br/>same allowances as cluster-1"]
+                kafka2["Kafka cluster 'kafka-cluster-2' (KRaft)<br/>replication target (Step 4)"]
+            end
+            subgraph mm2Ns["namespace: kafka-mm2 (replication, optional, Step 4)"]
+                mm2["MirrorMaker 2<br/>kafka-cluster-1 → kafka-cluster-2<br/>(replicates inside the backend)"]
+            end
+            subgraph registryNs["namespace: kafka-registry (locked down)"]
+                registryNetpol["[Backend lockdown] NetworkPolicy (Step 5.3)<br/>Registry ingress ONLY from the kafka-proxy DMZ,<br/>ONLY on the REST port"]
+                registry["Apicurio Registry 3<br/>schema store for Record Validation<br/>(PostgreSQL storage)"]
+            end
         end
     end
 
@@ -132,19 +136,24 @@ flowchart TB
     browser -. "OIDC browser login<br/>(kafka-console client)" .-> keycloak
     producer -. "token fetch (client_credentials)" .-> keycloak
 
-    style kafkaNs1 fill:#fdecea,stroke:#b71c1c,stroke-width:2px
-    style kafkaNs2 fill:#fdecea,stroke:#b71c1c,stroke-width:2px
-    style bridgeNs fill:#fff8e1,stroke:#e65100,stroke-width:2px
-    style authNs fill:#e8eaf6,stroke:#283593,stroke-width:2px
-    style proxyNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style consoleNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style producerNs fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style consumerNs fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
-    style registryNs fill:#e0f2f1,stroke:#00695c,stroke-width:2px
-    style mm2Ns fill:#efebe9,stroke:#4e342e,stroke-width:2px
+    %% layout hints (invisible links): shape the layout so no arrows cross
+    console ~~~ producer
+    keycloak ~~~ consumer
+
+    style kafkaNs1 fill:#FFFFFF,stroke:#4D4D4D
+    style kafkaNs2 fill:#FFFFFF,stroke:#4D4D4D
+    style bridgeNs fill:#FFFFFF,stroke:#EE0000
+    style authNs fill:#ECE6FF,stroke:#5E40BE
+    style proxyNs fill:#FFFFFF,stroke:#EE0000
+    style consoleNs fill:#FFFFFF,stroke:#0066CC
+    style registryNs fill:#FFFFFF,stroke:#4D4D4D
+    style mm2Ns fill:#DAF2F2,stroke:#37A3A3
+    style dmz fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+    style backend fill:#F2F2F2,stroke:#4D4D4D
+    style clientsSec fill:#E0F0FF,stroke:#0066CC,stroke-width:2px
 ```
 
-Each namespace is a **logical isolation boundary**: its own RBAC, service accounts, and NetworkPolicies. The **DMZ** is the `kafka-proxy` namespace (green) — it holds the proxy, the single client-facing door to the brokers — plus the `kafka-http-bridge` namespace (amber), the exposed HTTP API (also a client of the proxy), locked down by its own NetworkPolicy ([Step 7.5](docs/07-http-bridge.md#75--restrict-http-access-to-the-bridge-dmz-networkpolicy)). The **secure backend** holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces (red), sealed off with no ingress except the DMZ proxy (plus the optional `kafka-mm2` replication plane — also in the secure backend — on the plain listener) — and the `kafka-registry` namespace (teal), Apicurio Registry, reachable only by the proxy on the REST port ([Step 5.3](docs/05-apicurio-registry.md#53--lock-down-the-registry-network)). The green `kafka-console` namespace is a client-facing UI, the Camel client workloads are in their own namespaces (`kafka-producer` in light blue, `kafka-consumer` in purple), `kafka-auth` (blue) holds the identity provider, and the optional `kafka-mm2` namespace (brown), also part of the secure backend, holds MirrorMaker 2 — it replicates between the backend clusters ([Step 4](docs/04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)). Everything runs on a single OpenShift cluster, managed by the `oc` commands in this guide.
+Each namespace is a **logical isolation boundary**: its own RBAC, service accounts, and NetworkPolicies. The diagram groups the namespaces into two zones: the **DMZ** (Red Hat Red tint — brand red highlights the important part: the client-facing entry points) holds the `kafka-proxy` namespace (the proxy, the single client-facing door to the brokers), the `kafka-http-bridge` namespace (the exposed HTTP API, also a client of the proxy, locked down by its own NetworkPolicy — [Step 7.5](docs/07-http-bridge.md#75--restrict-http-access-to-the-bridge-dmz-networkpolicy)), and the `kafka-auth` namespace (purple, Keycloak — the identity provider is DMZ-resident because it issues the tokens the DMZ workloads and browser users fetch, and it is exposed off-cluster via its own Ingress). The **secure backend** (neutral gray) holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces, sealed off with no ingress except the DMZ proxy (plus the optional `kafka-mm2` replication plane on the plain listener, teal) — and the `kafka-registry` namespace, Apicurio Registry, reachable only by the proxy on the REST port ([Step 5.3](docs/05-apicurio-registry.md#53--lock-down-the-registry-network)) — and the `kafka-console` namespace (blue), the OIDC-secured client-facing UI, which also resides in the secure backend (it is only reachable in-cluster, not exposed off-cluster like the DMZ entry points). Outside the two zones: the Camel client workloads are in their own namespaces (`kafka-producer` and `kafka-consumer`, blue), and `kafka-auth` (purple) holds the identity provider — MirrorMaker 2 replicates between the backend clusters ([Step 4](docs/04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)). Everything runs on a single OpenShift cluster, managed by the `oc` commands in this guide.
 
 How to read it:
 

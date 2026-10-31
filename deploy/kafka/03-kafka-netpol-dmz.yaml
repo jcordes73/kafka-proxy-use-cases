@@ -2,6 +2,11 @@
 # Backend lockdown (the DMZ/backend split) for both Kafka clusters:
 # default-deny + same-namespace +
 # proxy-namespace-only on the client-facing listener ports (9092/9093).
+# The Streams Console (Step 8) additionally connects DIRECTLY to the TLS
+# listener (9093) for the physical-cluster console entries — OAUTHBEARER only,
+# never the unauthenticated plain listener. NOTE: direct console connections
+# bypass the proxy ACLs (the brokers have no authorization block — an
+# authenticated principal has full access).
 # NOTE: In Strimzi 0.51 the listener ports are additionally governed by the
 # operator-generated <cluster-name>-network-policy-kafka — hence the
 # per-listener networkPolicyPeers in 02-kafka.yaml must match this intent.
@@ -39,6 +44,8 @@ spec:
 #    MirrorMaker 2 (Step 4, kafka-mm2) additionally reaches the PLAIN listener
 #    only — it replicates between the two clusters over the unauthenticated
 #    plain listener (see docs/04-mirrormaker2.md).
+#    The Streams Console (Step 8) additionally reaches the TLS listener only —
+#    its physical-cluster connections use OAUTHBEARER over SASL_SSL.
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -64,6 +71,13 @@ spec:
               kubernetes.io/metadata.name: kafka-mm2
       ports:
         - port: 9092
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-console
+      ports:
+        - port: 9093
           protocol: TCP
 ---
 # 4. Default deny: no ingress to the kafka-cluster-2 pods at all
@@ -98,6 +112,8 @@ spec:
 #    MirrorMaker 2 (Step 4, kafka-mm2) additionally reaches the PLAIN listener
 #    only — it replicates between the two clusters over the unauthenticated
 #    plain listener (see docs/04-mirrormaker2.md).
+#    The Streams Console (Step 8) additionally reaches the TLS listener only —
+#    its physical-cluster connections use OAUTHBEARER over SASL_SSL.
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -123,4 +139,11 @@ spec:
               kubernetes.io/metadata.name: kafka-mm2
       ports:
         - port: 9092
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka-console
+      ports:
+        - port: 9093
           protocol: TCP

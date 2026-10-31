@@ -19,6 +19,34 @@ spec:
       kind: virtualkafkaclusters.kroxylicious.io   # proxy virtual cluster (3.2)
       namespace: kafka-proxy
       metricsSource: uwm-prometheus
+      # 3.2.2 operator note: Kafka-scoped resources (topics, groups, nodes...)
+      # are only mapped from the PER-CLUSTER security.roles — the global
+      # security.roles maps only `kafkas` (verified live: Kafka-scoped rules
+      # in spec.security.roles are silently dropped from the generated
+      # config). Each cluster entry carries the same administrators rules.
+      security:
+        roles:
+          - name: administrators
+            rules:
+              - resources:
+                  - topics
+                  - topics/records
+                  - topics/metrics
+                  - groups
+                  - groups/configs
+                  - nodes
+                  - nodes/configs
+                  - nodes/metrics
+                  - rebalances
+                  - users
+                privileges:
+                  - GET
+                  - LIST
+              - resources:
+                  - groups
+                  - rebalances
+                privileges:
+                  - UPDATE
       properties:
         values:
           # port is operator-allocated (guide Step 6.4)
@@ -28,9 +56,11 @@ spec:
           # SASL/OAUTHBEARER (Step 3.2): the console's Kafka connection uses the
           # kafka-console-kafka Keycloak service-account client via the native
           # OAuth handler. Create the Secret first (the realm import does not
-          # create Kubernetes Secrets):
+          # create Kubernetes Secrets) — the KEY must be the full Kafka
+          # property name (valuesFrom maps every key as a property):
           #   oc create secret generic kafka-console-kafka-oauth \
-          #     --from-literal=client-secret=kafka-console-kafka-secret -n kafka-console
+          #     --from-literal=sasl.oauthbearer.client.credentials.client.secret=kafka-console-kafka-secret \
+          #     -n kafka-console
           - name: sasl.mechanism
             value: OAUTHBEARER
           - name: sasl.jaas.config
@@ -39,22 +69,190 @@ spec:
             value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
           - name: sasl.oauthbearer.client.credentials.client.id
             value: kafka-console-kafka
-          - name: sasl.oauthbearer.client.credentials.client.secret
-            valueFrom:
-              secretKeyRef:
-                name: kafka-console-kafka-oauth
-                key: client-secret
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
         # The virtual cluster ingress speaks TLS (guide Step 6.4): client props
         # from the console-kafka-tls ConfigMap (Step 8.2) — every key becomes
         # a Kafka client property, including the proxy CA as a PEM trust store.
+        # NOTE: `values[].valueFrom` is NOT in the Console CRD schema —
+        # Kubernetes silently prunes it and the property resolves to null
+        # ("Invalid value null for configuration
+        # sasl.oauthbearer.client.credentials.client.secret"). Secrets are
+        # referenced via `valuesFrom.secretRef`, with the Secret's key named
+        # as the full property name.
         valuesFrom:
+          - secretRef:
+              name: kafka-console-kafka-oauth
           - configMapRef:
               name: console-kafka-tls
+    - name: kafka-cluster-2
+      kind: virtualkafkaclusters.kroxylicious.io   # proxy virtual cluster (3.2)
+      namespace: kafka-proxy
+      metricsSource: uwm-prometheus
+      security:
+        roles:
+          - name: administrators
+            rules:
+              - resources:
+                  - topics
+                  - topics/records
+                  - topics/metrics
+                  - groups
+                  - groups/configs
+                  - nodes
+                  - nodes/configs
+                  - nodes/metrics
+                  - rebalances
+                  - users
+                privileges:
+                  - GET
+                  - LIST
+              - resources:
+                  - groups
+                  - rebalances
+                privileges:
+                  - UPDATE
+      properties:
+        values:
+          # Same connection stack as cluster-1: the kafka-console-kafka client
+          # has full access on both virtual clusters (proxy ACLs), and both
+          # virtual clusters share the proxy CA (same operator + ingress).
+          - name: bootstrap.servers
+            value: kafka-cluster-2-cluster-ip-2-bootstrap.kafka-proxy.svc.cluster.local:9292
+          - name: sasl.mechanism
+            value: OAUTHBEARER
+          - name: sasl.jaas.config
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+          - name: sasl.login.callback.handler.class
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
+          - name: sasl.oauthbearer.client.credentials.client.id
+            value: kafka-console-kafka
+          - name: sasl.oauthbearer.token.endpoint.url
+            value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+        valuesFrom:
+          - secretRef:
+              name: kafka-console-kafka-oauth
+          - configMapRef:
+              name: console-kafka-tls
+    # Physical clusters (Strimzi Kafka CRs) — direct TLS connections (Step 8).
+    # kind defaults to kafkas.kafka.strimzi.io, so name+namespace point the
+    # console at the Kafka CRs: it discovers them (cluster-wide RBAC) and
+    # shows their real namespace and status in the UI (unlike the virtual
+    # clusters, which display kafka-proxy / "Not Available").
+    # ⚠️ Direct connections BYPASS the proxy ACLs — the brokers have no
+    # authorization block, so any authenticated principal has full access.
+    # The DMZ netpols (deploy/kafka/03-kafka-netpol-dmz.yaml) allow
+    # kafka-console → TLS listener (9093) only.
+    - name: kafka-cluster-1
+      kind: kafkas.kafka.strimzi.io
+      namespace: kafka-cluster-1
+      listener: tls
+      metricsSource: uwm-prometheus
+      security:
+        roles:
+          - name: administrators
+            rules:
+              - resources:
+                  - topics
+                  - topics/records
+                  - topics/metrics
+                  - groups
+                  - groups/configs
+                  - nodes
+                  - nodes/configs
+                  - nodes/metrics
+                  - rebalances
+                  - users
+                privileges:
+                  - GET
+                  - LIST
+              - resources:
+                  - groups
+                  - rebalances
+                privileges:
+                  - UPDATE
+      properties:
+        values:
+          - name: bootstrap.servers
+            value: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093
+          - name: sasl.mechanism
+            value: OAUTHBEARER
+          - name: sasl.jaas.config
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+          - name: sasl.login.callback.handler.class
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
+          - name: sasl.oauthbearer.client.credentials.client.id
+            value: kafka-console-kafka
+          - name: sasl.oauthbearer.token.endpoint.url
+            value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+        valuesFrom:
+          - secretRef:
+              name: kafka-console-kafka-oauth
+          - configMapRef:
+              name: console-kafka-cluster1-ca
+    - name: kafka-cluster-2
+      kind: kafkas.kafka.strimzi.io
+      namespace: kafka-cluster-2
+      listener: tls
+      metricsSource: uwm-prometheus
+      security:
+        roles:
+          - name: administrators
+            rules:
+              - resources:
+                  - topics
+                  - topics/records
+                  - topics/metrics
+                  - groups
+                  - groups/configs
+                  - nodes
+                  - nodes/configs
+                  - nodes/metrics
+                  - rebalances
+                  - users
+                privileges:
+                  - GET
+                  - LIST
+              - resources:
+                  - groups
+                  - rebalances
+                privileges:
+                  - UPDATE
+      properties:
+        values:
+          - name: bootstrap.servers
+            value: kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9093
+          - name: sasl.mechanism
+            value: OAUTHBEARER
+          - name: sasl.jaas.config
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+          - name: sasl.login.callback.handler.class
+            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
+          - name: sasl.oauthbearer.client.credentials.client.id
+            value: kafka-console-kafka
+          - name: sasl.oauthbearer.token.endpoint.url
+            value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+        valuesFrom:
+          - secretRef:
+              name: kafka-console-kafka-oauth
+          - configMapRef:
+              name: console-kafka-cluster2-ca
+  # Kafka 4.x OAuthBearer URL restriction: the console's admin client refuses
+  # to fetch tokens from sasl.oauthbearer.token.endpoint.url unless the exact
+  # URL is allow-listed ("The URL cannot be accessed due to restrictions" →
+  # "Failed to create new KafkaAdminClient" on every /api call). The entry
+  # must be the FULL endpoint URL — a scheme://host:port entry alone does not
+  # match (verified live in Step 8.3).
+  containers:
+    api:
+      spec:
+        env:
+          - name: JAVA_TOOL_OPTIONS
+            value: -Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
   # Step 8.3 — secure the console UI with Keycloak (kafka-console client).
   # The realm import (deploy/keycloak/04-kafka-realm-import.yaml) carries the
-  # matching redirect URI and the `demo` user mapped to the administrators role.
+  # matching redirect URI and the `kafka-admin` user mapped to the
+  # administrators role.
   security:
     oidc:
       authServerUrl: https://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}/realms/kafka
@@ -76,14 +274,22 @@ spec:
               key: ca.crt
     subjects:
       - include:
-          - demo
           - kafka-admin
         roleNames:
           - administrators
     roles:
       - name: administrators
         rules:
+          # Global scope: cluster listing/selection only. ⚠️ `kafkas` ALL does
+          # NOT cascade to the Kafka-scoped sub-resources (topics, groups,
+          # nodes...) — without a Kafka-scoped rule every topic/group page
+          # answers "Not Authorized: Insufficient permissions to resource or
+          # action" (verified live). A single `*` (Kafka.ALL) rule covers all
+          # Kafka-scoped resources; the deployed 3.2.2 operator maps this
+          # single global rule (multi-rule attempts were silently dropped,
+          # verified live).
           - resources:
               - kafkas
+              - '*'
             privileges:
               - 'ALL'

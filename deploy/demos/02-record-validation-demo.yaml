@@ -1,8 +1,10 @@
 # deploy/demos/02-record-validation-demo.yaml — Demo scenarios, Demo 2 (docs/11-demos.md)
-# Record Validation demo: a dedicated topic plus the KafkaProtocolFilter that
-# validates record values against the JSON schema registered in Apicurio
-# Registry (Step 5.4). The rule is scoped to the demo topic only — other
-# topics pass through unvalidated (no defaultRule).
+# Record Validation demo: the KafkaProtocolFilter that validates record values
+# against the JSON schema registered in Apicurio Registry (Step 5.4), scoped to
+# topic-A — other topics pass through unvalidated (no defaultRule). topic-A is
+# NOT declared here: it already exists on both clusters (created directly with
+# kafka-topics.sh, Step 3 — the Topic Operator now reconciles KafkaTopic
+# resources, but topic-A was created before that and needs no declaration).
 #
 # NOTE: the filter rejects produce requests with non-conforming values before
 # they reach the broker. Remove the filterRef from the virtual cluster
@@ -10,20 +12,7 @@
 #
 # apicurioId is the schema's contentId from the registry — filled in after
 # registering the schema (Step 5.4). Apply through envsubst:
-#   envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
----
-apiVersion: kafka.strimzi.io/v1
-kind: KafkaTopic
-metadata:
-  name: record-validation-demo
-  namespace: kafka-cluster-1
-  labels:
-    strimzi.io/cluster: kafka-cluster-1
-spec:
-  partitions: 1
-  replicas: 1
-  config:
-    min.insync.replicas: 1
+#   APICURIO_CONTENT_ID=1 envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
 ---
 kind: KafkaProtocolFilter
 apiVersion: kroxylicious.io/v1alpha1
@@ -35,7 +24,7 @@ spec:
   configTemplate:
     rules:
       - topicNames:
-          - record-validation-demo
+          - topic-A
         valueRule:
           schemaValidationConfig:
             apicurioRegistryUrl: http://apicurio-registry-app-service.kafka-registry.svc.cluster.local:8080

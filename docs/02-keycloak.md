@@ -18,6 +18,8 @@ oc wait --for=jsonpath='{.status.phase}'=Succeeded csv --all -n kafka-auth --tim
 oc get pods -n kafka-auth
 ```
 
+The subscription **pins the exact tested CSV** via `startingCSV: rhbk-operator.v26.4.16-opr.1` (see [Components and Tested Versions](../README.md#components-and-tested-versions) in the README) with `installPlanApproval: Manual` — OLM cannot auto-upgrade the operator away from the tested version.
+
 > `oc apply -f <dir-or-file>` creates the namespace, the OperatorGroup, and subscribes in a single transaction — note that `Namespace`/`OperatorGroup`/`Subscription` resources must be applied together (as in this file) so the OperatorGroup exists when the Subscription is validated.
 
 ## 2.2 — Provision a database (dev: ephemeral PostgreSQL)
@@ -107,7 +109,7 @@ echo "Password:           $(oc get secret keycloak-initial-admin -n kafka-auth -
 ```
 
 - **URL** — the operator-assigned Route hostname (`<cr-name>-ingress-<namespace>.<cluster-domain>`, discover with `oc get routes -n kafka-auth`); the admin console lives at `/admin/`. The realm URL that clients and the console OIDC login use is `https://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}/realms/kafka`.
-- **Username / password** — the operator generates the bootstrap admin into the `keycloak-initial-admin` Secret (e.g. `temp-admin` with a random password, lives in the **master** realm). The bootstrap admin manages the realm — it is not used by the data path or the console login. Realm users (both from the realm import): `demo` for the console/registry UI login, and **`kafka-admin` / `openshift`** — the cluster administrator with the `sr-admin` role (full Apicurio Registry access, [Step 5.2](05-apicurio-registry.md#52--deploy-the-registry-postgresql-storage)) and the console `administrators` role ([Step 8.3](08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc)); the Kafka cluster itself has no authorization block, so every authenticated principal has full cluster access. **Dev credentials only** — manage real users through your identity source.
+- **Username / password** — the operator generates the bootstrap admin into the `keycloak-initial-admin` Secret (e.g. `temp-admin` with a random password, lives in the **master** realm). The bootstrap admin manages the realm — it is not used by the data path or the console login. Realm users (from the realm import): `demo` for the console/registry UI login; **`kafka-admin` / `openshift`** — the cluster administrator, with the `sr-admin` role (full Apicurio Registry access, [Step 5.2](05-apicurio-registry.md#52--deploy-the-registry-postgresql-storage)), the console `administrators` role ([Step 8.3](08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc)), and **`default-roles-kafka` — required**: it brings the `account` client roles that put `aud: account` in the token; without it the token carries **no `aud` claim** and every proxy connection fails ("No Audience (aud) claim present" — the proxy's `OauthBearerValidation` requires `expectedAudience: account`, verified live). Kafka-side, kafka-admin is in the proxy ACLs' infrastructure group with full access on **all topics** (`to * Topic with name like "*"` — includes topic-A/B/C; verified live with a kafka-admin password-grant token); and **`kafka-user-A/B/C`** (passwords `password-a/b/c`) — plain demo users for the Kafka data path (password grants via the `kafka-console` client, no realm roles). They carry no cluster roles — the Kafka cluster itself has no authorization block, so access is decided at the **proxy ACLs** ([Step 6.6](06-proxy.md#66--optional-add-a-filter)): `kafka-user-a` is granted `{READ, WRITE}` on `topic-A` plus `READ` on group `kafka-user-a-group`, `kafka-user-b` is granted `READ` on `topic-A` plus `READ` on group `kafka-user-b-group`, and `kafka-user-c` is granted `{READ, WRITE}` on `topic-C` plus `READ` on group `kafka-user-c-group`; everything else is denied (`otherwise deny`). Note Keycloak lowercases usernames — the token's `preferred_username` (and the ACL principal) is `kafka-user-a`. **Dev credentials only** — manage real users through your identity source.
 
 > **Production:** change the initial admin credentials, enable MFA, and use a real hostname with a CA-signed certificate. Restrict who can create/edit `Keycloak` and `KeycloakRealmImport` CRs — they effectively hold namespace-level privileges.
 
@@ -141,6 +143,8 @@ Where the clients are used:
 
 The realm import does **not** create Kubernetes Secrets — create one per workload in its own namespace before deploying the clients (see [`deploy/README.md`](../deploy/README.md)).
 
+> **User profile — every realm user needs `firstName`/`lastName` (dummy values are fine):** Keycloak's default user profile marks `firstName`, `lastName`, and `email` as **required for the `user` role** — a user without them gets the **Verify Profile** required action at first login ("Account is not fully set up", and browser login loops on the profile form). The realm import JSON cannot carry user-profile configuration (it is not part of `RealmRepresentation`), so the fix is on the user side: the realm users in the manifest all carry **dummy `firstName`/`lastName`/`email` values** that satisfy the profile, so first logins work unchanged. If you create users via the Admin API, set these fields there too (or relax the profile live via the `users/profile` Admin API endpoint).
+
 > **Re-importing an existing realm:** the operator's import job runs Keycloak's startup import (`kc.sh import`), which **skips an existing realm entirely** — so re-applying the CR with changed clients does *not* update Keycloak (the job reports `Done` without importing). To change clients:
 > 1. Delete the realm (via the Keycloak admin API) and delete + re-apply the `KeycloakRealmImport` CR — the fresh import then creates the realm from the CR.
 > 2. **Restart the Keycloak pod** — the running instance caches realms in memory and keeps serving the previous state (including old client secrets) until restarted, which surfaces as `invalid_client` from token requests.
@@ -152,13 +156,14 @@ oc get routes -n kafka-auth
 # Token endpoint: https://<keycloak-hostname>/realms/kafka/protocol/openid-connect/token
 
 # The kafka-console client has directAccessGrantsEnabled: true — password
-# grants work for the realm users (demo, kafka-admin). The realm's built-in
-# admin-cli accepts the grant too but issues a slim token without realm
-# roles, which role-based authorization (Step 5.2) rejects.
+# grants work for the realm users (kafka-admin and the kafka-user-* users).
+# The realm's built-in admin-cli accepts the grant too but issues a slim
+# token without realm roles, which role-based authorization (Step 5.2)
+# rejects.
 curl -s https://<keycloak-hostname>/realms/kafka/protocol/openid-connect/token \
   -d grant_type=password \
   -d client_id=kafka-console -d client_secret=kafka-console-secret \
-  -d username=demo -d password=demopassword | jq -r .access_token
+  -d username=kafka-user-a -d password=password-a | jq -r .access_token
 
 # Cluster administrator token (sr-admin role — full registry access):
 curl -s https://<keycloak-hostname>/realms/kafka/protocol/openid-connect/token \

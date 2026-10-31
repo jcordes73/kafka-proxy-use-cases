@@ -99,7 +99,7 @@ public class KafkaProducerRoute extends RouteBuilder {
                 String orderId = "C-" + UUID.randomUUID().toString().substring(0, 8);
                 e.getIn().setBody("{\"orderId\":\"" + orderId + "\",\"amount\":" + amount + "}");
             })
-            .to("kafka:test-topic")   // produced THROUGH the proxy
+            .to("kafka:topic-A")   // produced THROUGH the proxy
             .log("sent: ${body}");
     }
 }
@@ -118,7 +118,7 @@ import org.apache.camel.builder.RouteBuilder;
 public class KafkaConsumerRoute extends RouteBuilder {
     @Override
     public void configure() {
-        from("kafka:test-topic?groupId=camel-consumer&autoOffsetReset=earliest")
+        from("kafka:topic-A?groupId=camel-consumer&autoOffsetReset=earliest")
             .log("received: ${body}");   // consumed THROUGH the proxy
     }
 }
@@ -212,7 +212,7 @@ received: {"orderId":"C-b204e7c5","amount":318}
 
 - **Namespace separation:** each client lives in its own namespace (`kafka-producer`, `kafka-consumer`) — own RBAC, own service accounts, and independently lockable via NetworkPolicies.
 - **DMZ coherence:** the Camel clients connect only to the proxy's virtual cluster — direct access from `kafka-producer` or `kafka-consumer` to the Kafka pods is denied by the [Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) NetworkPolicies. The producer's messages and the consumer's records both flow through the proxy, so any enabled filters (encryption, validation, authorization) apply to this traffic too.
-- **Schema-conformant payloads:** the producer generates records matching the record-validation demo JSON schema (Step 5.4 — `orderId` string, `amount` number, no additional properties). The same payload passes the RecordValidation filter scoped to `record-validation-demo` ([Demo 2](11-demos.md#demo-2--record-validation-end-to-end)), and the JSON records make `test-topic` consumable in JSON format through the HTTP Bridge (the bridge's JSON decoder rejects the former plaintext records with 406).
-- **Verify in the console ([Step 8](08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)):** the produced messages appear on `test-topic` in the Streams for Apache Kafka Console — a nice end-to-end check that everything shares one data path.
+- **Schema-conformant payloads:** the producer generates records matching the record-validation demo JSON schema (Step 5.4 — `orderId` string, `amount` number, no additional properties). The same payload passes the RecordValidation filter scoped to `topic-A` ([Demo 2](11-demos.md#demo-2--record-validation-end-to-end)), and the JSON records make `topic-A` consumable in JSON format through the HTTP Bridge (the bridge's JSON decoder rejects non-JSON records with 406).
+- **Verify in the console ([Step 8](08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)):** the produced messages appear on `topic-A` in the Streams for Apache Kafka Console — a nice end-to-end check that everything shares one data path.
 - **Scaling:** the consumer uses a fixed consumer group (`camel-consumer`); scale the Deployment for multiple partitions and rebalance like any Kafka consumer.
 - **Version pinning:** the BOM above pins the Red Hat build; check the [release schedule](https://access.redhat.com/articles/7021827) before upgrading — Camel Quarkus and Quarkus platform versions move together.

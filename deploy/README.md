@@ -1,6 +1,6 @@
 # OpenShift Deployment Manifests
 
-Ready-to-apply manifests for the full stack from [openshift-setup.md](../openshift-setup.md), organized per component. **Run all commands from the repository root** — every path below (and in the guides) is relative to it. Apply in **deployment order** — the user-workload monitoring stack first, then Keycloak, then the Kafka cluster, then MirrorMaker 2, then the Apicurio Registry, then the proxy (the HTTP Bridge and Console connect through it and follow), and the per-component monitoring *integration* — netpols, PodMonitors, console metrics source, alerts — after those components deploy. The Record Validation demo lives in [deploy/demos/](demos/02-record-validation-demo.yaml) ([Demo scenarios — Demo 2](../docs/11-demos.md#demo-2--record-validation-end-to-end)) and deploys with the optional demo scenarios:
+Ready-to-apply manifests for the full stack from [openshift-setup.md](../openshift-setup.md), organized per component. **Run all commands from the repository root** — every path below (and in the guides) is relative to it. Apply in **deployment order** — the user-workload monitoring stack first, then Keycloak, then the Kafka cluster, then MirrorMaker 2, then the Apicurio Registry, then the proxy (the HTTP Bridge and Console connect through it and follow), and the per-component monitoring *integration* — netpols, PodMonitors, console metrics source, alerts — after those components deploy. The Record Validation demo lives in [deploy/demos/](demos/02-topic-A (validation).yaml) ([Demo scenarios — Demo 2](../docs/11-demos.md#demo-2--record-validation-end-to-end)) and deploys with the optional demo scenarios:
 
 ```bash
 # Deploy order 1 — user-workload monitoring stack (Step 1.1, cluster-admin, once)
@@ -25,6 +25,8 @@ oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml
 oc wait --for=condition=Ready kafkamirrormaker2/kafka-cluster-1-to-2 -n kafka-mm2 --timeout=600s
 
 # Deploy order 5 — Apicurio Registry (Steps 5.1–5.4): operator, dev PostgreSQL, registry, schema.
+# Deploy order 6 extras — proxy ACLs (06-kafka-acl.yaml): apply WITHOUT envsubst
+# (the ${configmap:...} interpolation ref must reach the operator).
 # The registry CR (03-registry.yaml) embeds Routes + Keycloak auth — apply through envsubst.
 # The OIDC truststore (keycloak-oidc-truststore) must be built with keytool from the
 # Keycloak cert — an openssl-generated p12 loads with 0 entries in the JVM (Step 5.2).
@@ -32,7 +34,7 @@ oc wait --for=condition=Ready kafkamirrormaker2/kafka-cluster-1-to-2 -n kafka-mm
 # them — a duplicate entry fails the import); the import is skipped when the realm
 # already exists (delete the realm + the import Job to re-run it).
 # The Record Validation demo (Demo scenarios, Demo 2) is optional — its manifest moved to
-# deploy/demos/02-record-validation-demo.yaml; it needs the proxy's virtual cluster, so it
+# deploy/demos/02-topic-A (validation).yaml; it needs the proxy's virtual cluster, so it
 # deploys with the demo scenarios (Step 11).
 oc apply -f deploy/apicurio/01-subscription.yaml
 oc -n kafka-registry patch installplan $(oc -n kafka-registry get installplan -o jsonpath='{.items[0].metadata.name}') --type merge -p '{"spec":{"approved":true}}'
@@ -101,7 +103,7 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [9](../docs/09-camel-clients.md) |
 | `deploy/observability/01–05` | Per-component monitoring integration: metrics netpols, broker/proxy/bridge PodMonitors, alerts | [1.2–1.9](../docs/01-user-workload-monitoring.md) |
 | `deploy/custom-filter/` | Custom filter plugin: Dockerfile + image build + `KafkaProtocolFilter` (requires the local Maven filter project from [Step 10.1](../docs/10-custom-filter.md#101--generate-and-test-a-filter-project)) | [10](../docs/10-custom-filter.md) |
-| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`), proxy filters (authorization, entity isolation, token validation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
+| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-topic-A (validation).yaml`), proxy filters (authorization, entity isolation, token validation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
 
 ## Templating: `OPENSHIFT_APPS_DOMAIN`
 
@@ -122,13 +124,13 @@ Files without `${OPENSHIFT_APPS_DOMAIN}` can be applied directly with
 `oc apply -f <file>`. (`envsubst` leaves other `${...}` sequences — such as
 Strimzi config-provider references — untouched.)
 
-`deploy/demos/02-record-validation-demo.yaml` additionally uses
+`deploy/demos/02-topic-A (validation).yaml` additionally uses
 `${APICURIO_CONTENT_ID}` — the schema's `contentId` from the registry, obtained
 in [Step 5.4](../docs/05-apicurio-registry.md#54--register-a-schema):
 
 ```bash
 export APICURIO_CONTENT_ID=1
-envsubst < deploy/demos/02-record-validation-demo.yaml | oc apply -f -
+envsubst < deploy/demos/02-topic-A (validation).yaml | oc apply -f -
 ```
 
 ## What stays imperative

@@ -128,23 +128,55 @@ spec:
         - name: sr-admin
         - name: sr-developer
         - name: sr-readonly
-    # Demo user for the console's OIDC login (Step 8.3 subjects.include) —
-    # dev only; manage real users through your identity source.
+    # Note: the read-along `demo` console-login user was removed — log in to
+    # the console as kafka-admin. Manage real users through your identity
+    # source.
     users:
-      - username: demo
+      # Cluster administrator (dev): full access to the Apicurio Registry
+    # (sr-admin role), the Kafka Console (subjects mapping in the Console
+    # CR), and the Kafka cluster itself (no authorization block — all
+    # authenticated principals have full cluster access).
+    # Plain demo users (created via the admin API live too — the import is
+      # skipped when the realm exists): password grants via the kafka-console
+      # client. No realm roles — the proxy ACLs deny them until rules are
+      # added (otherwise deny). Every user carries DUMMY firstName/lastName
+      # (and email) values: Keycloak's default user profile marks these
+      # required for the `user` role, and without them VERIFY_PROFILE fires
+      # at first login ("Account is not fully set up") — the values here
+      # satisfy the profile so first logins work unchanged.
+      - username: kafka-user-A
         enabled: true
+        firstName: Kafka User A
+        lastName: Demo
+        email: kafka-user-a@example.com
+        emailVerified: true
         credentials:
           - type: password
-            value: demopassword
-      # Cluster administrator (dev): full access to the Apicurio Registry
-      # (sr-admin role), the Kafka Console (subjects mapping in the Console
-      # CR), and the Kafka cluster itself (no authorization block — all
-      # authenticated principals have full cluster access).
+            value: password-a
+      - username: kafka-user-B
+        enabled: true
+        firstName: Kafka User B
+        lastName: Demo
+        email: kafka-user-b@example.com
+        emailVerified: true
+        credentials:
+          - type: password
+            value: password-b
+      - username: kafka-user-C
+        enabled: true
+        firstName: Kafka User C
+        lastName: Demo
+        email: kafka-user-c@example.com
+        emailVerified: true
+        credentials:
+          - type: password
+            value: password-c
       - username: kafka-admin
         enabled: true
-        # Profile fields are required: without them VERIFY_PROFILE fires at
-        # first login and password grants fail with "Account is not fully
-        # set up" (verified live in Step 5.2).
+        # Dummy profile values (see the note above): required by the default
+        # user profile — without them VERIFY_PROFILE fires at first login and
+        # password grants fail with "Account is not fully set up" (verified
+        # live in Step 5.2).
         firstName: Kafka
         lastName: Admin
         email: kafka-admin@example.com
@@ -154,6 +186,13 @@ spec:
             value: openshift
         realmRoles:
           - sr-admin
+          # default-roles-kafka is REQUIRED: it brings the `account` client
+          # roles that put `aud: account` in the token — the proxy's
+          # OauthBearerValidation expects expectedAudience: account, and
+          # without the default roles the token has NO aud claim and every
+          # proxy connection fails ("No Audience (aud) claim present",
+          # verified live). Assigned via the admin API live too.
+          - default-roles-kafka
       # NOTE: do NOT declare `service-account-registry-api` here — Keycloak
       # auto-creates the service-account user when the client's
       # serviceAccountsEnabled is on, and an explicit entry collides

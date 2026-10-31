@@ -34,6 +34,8 @@ metadata:
   namespace: kafka-console
 spec:
   channel: amq-streams-3.2.x
+  # Pinned to the tested CSV (Step "Components and Tested Versions" in README.md)
+  startingCSV: amq-streams-console.v3.2.2-3
   name: amq-streams-console
   source: redhat-operators
   sourceNamespace: openshift-marketplace

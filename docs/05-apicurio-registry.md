@@ -14,10 +14,13 @@ This step deploys the registry in a `kafka-registry` namespace — part of the *
 
 ```bash
 oc apply -f deploy/apicurio/01-subscription.yaml
+
 oc -n kafka-registry get installplan          # then approve:
 oc -n kafka-registry patch installplan <name> --type merge -p '{"spec":{"approved":true}}'
 oc -n kafka-registry wait --for=jsonpath='{.status.phase}'=Succeeded csv/apicurio-registry-3.v3.2.6-r2 --timeout=300s
 ```
+
+The subscription **pins the exact tested CSV** via `startingCSV: apicurio-registry-3.v3.2.6-r2` (see [Components and Tested Versions](../README.md#components-and-tested-versions) in the README) — Manual approval plus `startingCSV` fixes the operator to the version that has been tested (OLM cannot auto-upgrade it away).
 
 ## 5.2 — Deploy the registry (PostgreSQL storage)
 

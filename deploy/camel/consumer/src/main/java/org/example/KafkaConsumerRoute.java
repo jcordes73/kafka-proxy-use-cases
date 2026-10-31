@@ -28,7 +28,7 @@ public class KafkaConsumerRoute extends RouteBuilder {
             "sasl.oauthbearer.token.endpoint.url",
                 "http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token"));
 
-        from("kafka:test-topic?groupId=camel-consumer&autoOffsetReset=earliest")
+        from("kafka:topic-A?groupId=camel-consumer&autoOffsetReset=earliest")
             .log("received: ${body}");   // consumed THROUGH the proxy
     }
 }

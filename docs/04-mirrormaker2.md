@@ -9,6 +9,7 @@ With two Kafka clusters deployed (Steps [0.2](03-kafka-cluster.md#32--create-the
 MM2 sits in the **secure backend** (`kafka-mm2`) — it is replication traffic between the backend clusters, never client-facing. Deployed via the Streams for Apache Kafka operator as a `KafkaMirrorMaker2` resource in its own **`kafka-mm2` namespace**, it connects **directly to both clusters' `plain` listeners** (9092) — unauthenticated and unencrypted, so no OAuth credentials or TLS trust are needed for the replication plane. It does *not* route through the proxy virtual clusters.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
 flowchart LR
     subgraph sourceNs["namespace: kafka-cluster-1 — secure backend (source)"]
         K1["Kafka cluster-1<br/>plain 9092 · tls 9093 (OAUTHBEARER)"]
@@ -24,6 +25,11 @@ flowchart LR
     MM2 -- "read source (plain 9092,<br/>backend allowance, no auth)" --> K1
     MM2 -- "write target (plain 9092,<br/>backend allowance, no auth)" --> K2
     P -. "application clients produce via the proxy<br/>(SASL/OAUTHBEARER, tls 9093)" .-> K1
+
+    style K1 fill:#F2F2F2,stroke:#4D4D4D
+    style K2 fill:#F2F2F2,stroke:#4D4D4D
+    style MM2 fill:#DAF2F2,stroke:#37A3A3
+    style P fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
 ```
 
 > **Security note:** the `plain` listener is unauthenticated and unencrypted — the trade-off is deliberate dev simplicity (no Keycloak client, no CA copies). If you want the replication plane authenticated instead, point MM2 at the `tls` listeners (9093), which requires SASL/OAUTHBEARER via the `custom` authentication type with the `mm2` Keycloak service-account client, plus each cluster's Strimzi CA copied into `kafka-mm2` (see [Step 3.2](03-kafka-cluster.md#32--create-the-kafka-cluster) and [Step 2.5](02-keycloak.md#25--client-authentication-at-the-proxy) — the v1 API change reference [31.7.4](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html-single/deploying_and_managing_streams_for_apache_kafka_on_openshift/index#kafkamirrormaker2) documents `oauth` → `type: custom`). The DMZ NetworkPolicy allowance must then move to port 9093.
@@ -63,13 +69,13 @@ Field notes (full manifest in the deploy file):
 
 ## 4.2 — Verify replication
 
-Produce to `test-topic` on the source (e.g. via the proxy, [Step 6.10](06-proxy.md#610--apply-and-verify)) and consume from the mirrored topic on the target. Mirrored resources are prefixed with the source alias:
+Produce to `topic-A` on the source (e.g. via the proxy, [Step 6.10](06-proxy.md#610--apply-and-verify)) and consume from the mirrored topic on the target. Mirrored resources are prefixed with the source alias:
 
 ```bash
 # Check the mirrored topic exists on the target (no auth needed — plain listener)
 oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-mm2 -- \
   bin/kafka-topics.sh --bootstrap-server kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9092 --list
-# kafka-cluster-1.test-topic
+# kafka-cluster-1.topic-A
 ```
 
 The MM2 `connect` pods in `kafka-mm2` log connector progress; MM2's internal topics (`mm2-configs`, `mm2-offsets`, `mm2-status`) are created on the target cluster automatically.

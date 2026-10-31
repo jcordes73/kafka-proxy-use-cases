@@ -46,9 +46,9 @@ The already-issued token stays valid for its lifetime (5 min — `accessTokenLif
 
 ## Demo 2 — Record Validation end-to-end
 
-> **Deployment order:** the demo topic, filter, and wiring deploy **after the proxy** (they wire `filterRefs` into the proxy's virtual cluster); with the demo scenarios at Step 11 that prerequisite is always satisfied. The schema (`APICURIO_CONTENT_ID`) comes from [Step 5.4](05-apicurio-registry.md#54--register-a-schema).
+> **Deployment order:** the filter deploys **after the proxy** (it wires `filterRefs` into the proxy's virtual cluster); with the demo scenarios at Step 11 that prerequisite is always satisfied. The schema (`APICURIO_CONTENT_ID`) comes from [Step 5.4](05-apicurio-registry.md#54--register-a-schema).
 
-[`deploy/demos/02-record-validation-demo.yaml`](../deploy/demos/02-record-validation-demo.yaml) declares the demo topic and the `KafkaProtocolFilter` — a `RecordValidation` rule scoped to `record-validation-demo` that checks record **values** against the registered schema (`apicurioId` = the contentId from Step 5.4). `allowNulls`/`allowEmpty` sit **inside** the rule definition (as siblings of `schemaValidationConfig`), and there is no `defaultRule` — all other topics pass through unvalidated:
+[`deploy/demos/02-record-validation-demo.yaml`](../deploy/demos/02-record-validation-demo.yaml) declares the `KafkaProtocolFilter` — a `RecordValidation` rule scoped to `topic-A` that checks record **values** against the registered schema (`apicurioId` = the contentId from Step 5.4). topic-A is **not declared** in the manifest: it already exists on both clusters (created directly with `kafka-topics.sh` in [Step 3.2](03-kafka-cluster.md#32--create-the-kafka-cluster)). `allowNulls`/`allowEmpty` sit **inside** the rule definition (as siblings of `schemaValidationConfig`), and there is no `defaultRule` — all other topics pass through unvalidated:
 
 ```bash
 export APICURIO_CONTENT_ID=1
@@ -68,13 +68,13 @@ Produce through the proxy with `kcat` — a conforming record is delivered, a no
 echo '{"orderId":"A-1","amount":10}' | oc run kcat-valid --rm -i --restart=Never \
   --image=confluentinc/cp-kcat:latest -- \
   -b kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-  -t record-validation-demo -P -l
+  -t topic-A -P -l
 # (delivered — exit 0)
 
 echo 'this is not json' | oc run kcat-invalid --rm -i --restart=Never \
   --image=confluentinc/cp-kcat:latest -- \
   -b kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-  -t record-validation-demo -P -l
+  -t topic-A -P -l
 # % Delivery failed for message: Broker: Broker failed to validate record
 ```
 
@@ -86,8 +86,8 @@ Watch `kroxylicious_client_to_proxy_request_total` vs `kroxylicious_proxy_to_ser
 
 The migration pattern from use case [7 in the guide](../README.md#7-cluster-migration--upstream-switching):
 
-1. Produce to `test-topic` via the proxy (Demo 1 client) — lands on `kafka-cluster-1`.
-2. Watch it mirror: `kafka-cluster-1.test-topic` appears on cluster-2 ([Step 4.2](04-mirrormaker2.md#42--verify-replication)).
+1. Produce to `topic-A` via the proxy — lands on `kafka-cluster-1`.
+2. Watch it mirror: `kafka-cluster-1.topic-A` appears on cluster-2 ([Step 4.2](04-mirrormaker2.md#42--verify-replication)).
 3. Cutover — one change, in one place (repoint the virtual cluster's `KafkaService`):
 
    ```bash
@@ -144,7 +144,7 @@ Enforce per-principal ACLs **before requests reach the brokers**. Requires the a
    oc wait --for=condition=Accepted=True virtualkafkacluster/kafka-cluster-1 -n kafka-proxy --timeout=120s
    ```
 
-3. The allow path: demo-client produces to `test-topic` — works.
+3. The allow path: demo-client produces to `topic-A` — works.
 4. The deny path: `camel-producer` (or the demo-client on any other topic) is rejected with `TOPIC_AUTHORIZATION_FAILED` **before the brokers** — the request never leaves the proxy.
 5. Revert: `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`
 
@@ -216,7 +216,7 @@ Envelope encryption at the proxy with a dev-mode Vault as KMS — **the wow-fact
    oc apply -f deploy/demos/11-record-encryption.yaml
    oc wait --for=condition=Ready pod -l app=vault -n kafka-vault --timeout=120s
    oc wait --for=condition=Complete job/kek-setup -n kafka-vault --timeout=180s
-   oc logs job/kek-setup -n kafka-vault    # KEK-test-topic created
+   oc logs job/kek-setup -n kafka-vault    # KEK-topic-A created
    oc wait --for=condition=Accepted=True virtualkafkacluster/kafka-cluster-1 -n kafka-proxy --timeout=120s
    ```
 
@@ -227,7 +227,7 @@ Envelope encryption at the proxy with a dev-mode Vault as KMS — **the wow-fact
    oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-proxy -- \
      bash -c 'echo "Y2xpZW50cw==" >/dev/null; bin/kafka-console-consumer.sh \
        --bootstrap-server kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9092 \
-       --topic test-topic --from-beginning --timeout-ms 10000 \
+       --topic topic-A --from-beginning --timeout-ms 10000 \
        --consumer-property security.protocol=PLAINTEXT'
    # -> ciphertext records (kroxylicious envelope-encrypted values)
    ```

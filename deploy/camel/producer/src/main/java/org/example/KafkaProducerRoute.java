@@ -34,13 +34,13 @@ public class KafkaProducerRoute extends RouteBuilder {
             // Message body conforms to the record-validation demo JSON schema
             // (Step 8.4 / Demo 2): {"orderId": string, "amount": number},
             // no additional properties. The same payload passes the
-            // RecordValidation filter scoped to record-validation-demo.
+            // RecordValidation filter scoped to topic-A.
             .process(e -> {
                 int amount = ThreadLocalRandom.current().nextInt(1, 1000);
                 String orderId = "C-" + UUID.randomUUID().toString().substring(0, 8);
                 e.getIn().setBody("{\"orderId\":\"" + orderId + "\",\"amount\":" + amount + "}");
             })
-            .to("kafka:test-topic")   // produced THROUGH the proxy
+            .to("kafka:topic-A")   // produced THROUGH the proxy
             .log("sent: ${body}");
     }
 }

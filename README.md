@@ -10,6 +10,7 @@ A practical guide to **Streams for Apache Kafka Proxy** (Red Hat's supported Kaf
 
 - [What Is Streams for Apache Kafka Proxy?](#what-is-streams-for-apache-kafka-proxy)
 - [Architecture at a Glance](#architecture-at-a-glance)
+- [Components and Tested Versions](#components-and-tested-versions)
 - [Use Case Catalog](#use-case-catalog)
   - [1. Encryption at Rest for Records (Record Encryption filter)](#1-encryption-at-rest-for-records-record-encryption-filter)
   - [2. Centralized Key Management & Rotation](#2-centralized-key-management--rotation)
@@ -36,6 +37,7 @@ The proxy is built on the open-source [Kroxylicious](https://kroxylicious.io) pr
 Its core idea is the **filter mechanism**: additional behavior is injected into the data path **without changing your applications or the Kafka cluster itself**.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
 flowchart LR
     subgraph openshift["OpenShift cluster"]
         subgraph dmzUC["DMZ"]
@@ -48,77 +50,86 @@ flowchart LR
     Producers["Producers"] --> P
     Consumers["Consumers"] --> P
     P --> K
+
+    style P fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+    style K fill:#F2F2F2,stroke:#4D4D4D
+    style Producers fill:#E0F0FF,stroke:#0066CC
+    style Consumers fill:#E0F0FF,stroke:#0066CC
 ```
 
 Because clients and brokers are both unaware of the proxy's transformations, adoption is incremental: you can start with one topic or one team and roll out from there.
 
 ## Architecture at a Glance
 
-The full-stack deployment pattern (see the [complete diagram in openshift-setup.md](openshift-setup.md#the-architecture-youll-deploy)) — the whole stack runs on OpenShift, with each component in its own namespace for logical separation. The **DMZ** holds the client-facing entry points — the `kafka-proxy` namespace (the proxy is the single Kafka-protocol door into the backend) and `kafka-http-bridge` (the exposed Kafka Bridge — also in the DMZ, locked down by its own NetworkPolicy). The **secure backend** holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces, ingress only from the proxy (plus the optional `kafka-mm2` replication plane — also in the secure backend — on the plain listener) — and `kafka-registry` (Apicurio Registry, reachable only by the proxy — see [Step 5](docs/05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation)):
+The full-stack deployment pattern (see the [complete diagram in openshift-setup.md](openshift-setup.md#the-architecture-youll-deploy)) — the whole stack runs on OpenShift, with each component in its own namespace for logical separation. The **DMZ** holds the client-facing entry points — the `kafka-proxy` namespace (the proxy is the single Kafka-protocol door into the backend), `kafka-http-bridge` (the exposed Kafka Bridge — also in the DMZ, locked down by its own NetworkPolicy), and `kafka-auth` (Keycloak, which issues the tokens the DMZ workloads and browser users fetch). The **secure backend** holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces, ingress only from the proxy (plus the optional `kafka-mm2` replication plane — also in the secure backend — on the plain listener) — `kafka-registry` (Apicurio Registry, reachable only by the proxy — see [Step 5](docs/05-apicurio-registry.md#step-5-deploy-apicurio-registry-and-validate-records-record-validation)), and the `kafka-console` namespace — the OIDC-secured client-facing UI, which also resides in the secure backend (it is only reachable in-cluster, not exposed off-cluster like the DMZ entry points):
 
 ```mermaid
-flowchart LR
-    A["Kafka clients"]
-    H["HTTP clients (REST)"]
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
+flowchart TB
     U["Browser (OIDC)"]
+    subgraph clientsSec["Clients (demo — deployed on OpenShift)"]
+        PROD["Kafka Client (producer)"]
+        CONS["Kafka Client (consumer)"]
+        H["HTTP clients (REST)"]
+    end
     subgraph openshift["OpenShift cluster — logical separation via namespaces"]
-        subgraph proxyNs["namespace: kafka-proxy — DMZ"]
-            P["Kafka Proxy<br/>(virtual clusters + filters)"]
+        subgraph dmz["DMZ — client-facing entry points"]
+            subgraph authNs["namespace: kafka-auth"]
+                KC["Red Hat build of Keycloak"]
+            end
+            subgraph proxyNs["namespace: kafka-proxy"]
+                P["Kafka Proxy<br/>(virtual clusters + filters)"]
+            end
+            subgraph bridgeNs["namespace: kafka-http-bridge"]
+                B["Kafka Bridge"]
+            end
         end
-        subgraph bridgeNs["namespace: kafka-http-bridge — DMZ"]
-            B["Kafka Bridge"]
-        end
-        subgraph consoleNs["namespace: kafka-console"]
-            C["Console UI"]
-        end
-        subgraph kafkaNs1["namespace: kafka-cluster-1 — secure backend (locked down)"]
-            K["Kafka cluster-1<br/>(backend — only the proxy may<br/>reach the brokers)"]
-        end
-        subgraph kafkaNs2["namespace: kafka-cluster-2 — secure backend"]
-            K2["Kafka cluster-2<br/>(replication target)"]
-        end
-        subgraph mm2Ns["namespace: kafka-mm2 — secure backend (replication, optional)"]
-            M["MirrorMaker 2"]
-        end
-        subgraph authNs["namespace: kafka-auth"]
-            KC["Red Hat build of Keycloak"]
-        end
-        subgraph registryNs["namespace: kafka-registry — secure backend"]
-            R["Apicurio Registry 3<br/>(schema store, reachable<br/>only by the proxy)"]
-        end
-        subgraph producerNs["namespace: kafka-producer"]
-            direction TB
-            PROD["Camel producer route"]
-        end
-        subgraph consumerNs["namespace: kafka-consumer"]
-            direction TB
-            CONS["Camel consumer route"]
+        subgraph backend["Secure backend — locked down"]
+            subgraph consoleNs["namespace: kafka-console"]
+                C["Console UI"]
+            end
+            subgraph registryNs["namespace: kafka-registry"]
+                R["Apicurio Registry 3<br/>(schema store, reachable<br/>only by the proxy)"]
+            end
+            subgraph kafkaNs1["namespace: kafka-cluster-1"]
+                K["Kafka cluster-1<br/>(backend — only the proxy may<br/>reach the brokers)"]
+            end
+            subgraph mm2Ns["namespace: kafka-mm2"]
+                M["MirrorMaker 2"]
+            end
+            subgraph kafkaNs2["namespace: kafka-cluster-2"]
+                K2["Kafka cluster-2<br/>(replication target)"]
+            end
         end
     end
-    A --> P
     H --> B
     B --> P
     U --> C
-    C --> P
+    P --> C
     PROD --> P
     P --> CONS
     P -- "Kafka protocol" --> K
     P -- "schema fetch" --> R
     M -- "replicate (plain 9092)" --> K
     M -- "mirrored data (plain 9092)" --> K2
+    %% layout hints (invisible links): shape the layout so no arrows cross
+    dmz ~~~ backend
+    R ~~~ K
+    PROD ~~~ U
     U -. "OIDC login" .-> KC
     C -. "validates session" .-> KC
 
-    style kafkaNs1 fill:#fdecea,stroke:#b71c1c,stroke-width:2px
-    style kafkaNs2 fill:#fdecea,stroke:#b71c1c,stroke-width:2px
-    style bridgeNs fill:#fff8e1,stroke:#e65100,stroke-width:2px
-    style authNs fill:#e8eaf6,stroke:#283593,stroke-width:2px
-    style proxyNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style consoleNs fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style producerNs fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style consumerNs fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
-    style registryNs fill:#e0f2f1,stroke:#00695c,stroke-width:2px
-    style mm2Ns fill:#efebe9,stroke:#4e342e,stroke-width:2px
+    style kafkaNs1 fill:#FFFFFF,stroke:#4D4D4D
+    style kafkaNs2 fill:#FFFFFF,stroke:#4D4D4D
+    style bridgeNs fill:#FFFFFF,stroke:#EE0000
+    style authNs fill:#ECE6FF,stroke:#5E40BE
+    style proxyNs fill:#FFFFFF,stroke:#EE0000
+    style consoleNs fill:#FFFFFF,stroke:#0066CC
+    style registryNs fill:#FFFFFF,stroke:#4D4D4D
+    style mm2Ns fill:#DAF2F2,stroke:#37A3A3
+    style dmz fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+    style backend fill:#F2F2F2,stroke:#4D4D4D
+    style clientsSec fill:#E0F0FF,stroke:#0066CC,stroke-width:2px
 ```
 
 - **Virtual clusters** — the proxy presents one or more virtual Kafka clusters; each looks like a real cluster to clients but forwards to a physical (upstream) cluster.
@@ -126,6 +137,26 @@ flowchart LR
 - **Ingress** — how clients reach each virtual cluster: Kubernetes load balancers or, as of 3.2, **OpenShift Routes** for off-cluster access.
 - **TLS** — TLS can be terminated at the proxy (client → proxy) and re-established upstream (proxy → broker). `trustAnchorRef` accepts Kubernetes Secrets, and the operator can automatically trust the CA anchor generated by Strimzi.
 - **Deployment on OpenShift** — managed by the **proxy Operator** using the proxy custom resources (`KafkaProxy`, `KafkaProxyIngress`, `VirtualKafkaCluster`, `KafkaService`, and related CRs). The operator handles deployment, scaling, and rolling updates.
+
+## Components and Tested Versions
+
+Every component in this guide was deployed and verified end-to-end against the versions below (see [FULL-STACK-VERIFICATION.md](FULL-STACK-VERIFICATION.md) for the live verification results). Every OLM **Subscription is version-locked to the tested CSV** (`startingCSV` + `installPlanApproval: Manual`), so a fresh install lands on the tested version and OLM cannot auto-upgrade it away — check the [release schedules](https://access.redhat.com/articles/7021827) before deliberately upgrading.
+
+| Component | Description | Tested version | Deployed via | Namespace |
+| --- | --- | --- | --- | --- |
+| OpenShift cluster | The Kubernetes platform everything runs on. | 4.22.18 | — | — |
+| Streams for Apache Kafka (operator + Kafka clusters) | The broker itself: two Kafka clusters in KRaft mode (dual-role broker/controller nodes, Strimzi `Kafka`/`KafkaNodePool` CRs), managed by the Strimzi-based Red Hat operator. `kafka-cluster-1` is the source of truth; `kafka-cluster-2` is the replication target. | 3.2.2-5 (Kafka 4.2.2.redhat-00002, `kafka-42-rhel9` images) | OLM `amq-streams` subscription | `kafka-cluster-1` / `kafka-cluster-2` |
+| MirrorMaker 2 | Asynchronous replication between the two backend clusters (`kafka-cluster-1` → `kafka-cluster-2` on the unauthenticated `plain` listener) — mirrors all topics and consumer groups, prefixed with the source cluster name. | 3.2.2-5 (`KafkaMirrorMaker2` v1 API) | OLM `amq-streams` subscription | `kafka-mm2` |
+| HTTP Bridge | REST API over the Kafka protocol (`/topics`, `/consumers`) — lets non-Kafka HTTP clients produce and consume. Sits in the DMZ and connects to the proxy's virtual clusters. | 3.2.2 (`bridge-rhel9` image) | OLM `amq-streams` subscription | `kafka-http-bridge` |
+| Streams for Apache Kafka Proxy (Kroxylicious) operator + proxy | The layer this guide is about: a Kafka-protocol proxy that presents **virtual clusters** to clients and injects behavior (filter API — record encryption/validation, entity isolation, ACLs, token validation) into the data path without touching clients or brokers. | 0.25.1 (`quay.io/kroxylicious`) | `KafkaProxy`/`VirtualKafkaCluster` CRs (community operator image) | `kafka-proxy` |
+| Streams for Apache Kafka Console (operator + API/UI) | A web UI to inspect the Kafka clusters — topics, consumer groups, nodes, records. Connects to the two virtual clusters (through the proxy) and the two physical clusters directly; OIDC-secured by Keycloak. | 3.2.2-3 | OLM `amq-streams-console` subscription | `kafka-console` |
+| Red Hat build of Keycloak (operator + server) | The OIDC authorization server: issues the OAUTHBEARER tokens for the Kafka data path (`tls` listener) and secures the console/registry UIs. Holds the realm users and service-account clients; PostgreSQL-backed. | 26.4.16-opr.1 (RHBK 26.4) | OLM `rhbk-operator` subscription | `kafka-auth` |
+| Apicurio Registry (operator + app/UI) | Schema store (Avro/JSON Schema/Protobuf) — the proxy's Record Validation filter fetches schemas from it to validate produce requests; PostgreSQL-backed storage. | 3.2.6-r2 | OLM `apicurio-registry-3` subscription | `kafka-registry` |
+| Camel Kafka clients (Quarkus platform / `camel-quarkus-kafka`) | Two DMZ demo clients (producer timer route, consumer route) built with Apache Camel on Quarkus — they produce/consume on `topic-A` through the proxy like any external application. | 3.33.3.SP2-redhat-00001 (`com.redhat.quarkus.platform` BOM) | Quarkus Maven build | `kafka-producer` / `kafka-consumer` |
+| HashiCorp Vault (dev-mode KMS, demo only) | Key management for the Record Encryption filter: holds the KEKs the proxy uses to encrypt/decrypt records (dev-mode server — not for production). | 1.20 | `deploy/demos/11-record-encryption.yaml` | none — **not deployed**; the optional `kafka-vault` namespace is created only by the [Record Encryption demo](docs/11-demos.md#demo-11--record-encryption-at-rest) manifest |
+| User-workload monitoring + alerts | Prometheus + Alertmanager for user namespaces — scrapes the brokers, proxy, bridge, console, and Keycloak metrics endpoints. | built into OpenShift 4.22 | platform | `openshift-user-workload-monitoring` |
+
+> The proxy (Kroxylicious) is deployed from its community operator image (`quay.io/kroxylicious/operator:0.25.1`) — it is not distributed through OLM as a Red Hat CSV. Everything else runs Red Hat operator builds.
 
 ## Use Case Catalog
 
@@ -227,6 +258,7 @@ The **Streams for Apache Kafka Console** authenticates its browser users through
 Deployment pattern (see [openshift-setup.md](openshift-setup.md) for full installation steps):
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
 flowchart LR
     C["Kafka clients<br/>(SASL/OAUTHBEARER)"]
     B["Browser users"]
@@ -249,6 +281,13 @@ flowchart LR
     B -- "OIDC login" --> KC
     B --> CON
     CON -- "Kafka protocol" --> P
+
+    style P fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+    style K fill:#F2F2F2,stroke:#4D4D4D
+    style KC fill:#ECE6FF,stroke:#5E40BE
+    style C fill:#E0F0FF,stroke:#0066CC
+    style B fill:#E0F0FF,stroke:#0066CC
+    style CON fill:#E0F0FF,stroke:#0066CC
 ```
 
 **Good fit when:** you want centralized identity for the streaming platform — SSO, short-lived tokens, per-client service accounts — while keeping the proxy's stable endpoints, TLS termination, and edge authorization.

@@ -24,7 +24,7 @@ data:
     from io.kroxylicious.filter.authorization import TopicResource as Topic, GroupResource as Group, TransactionalIdResource as TransactionalId;
 
     // demo-client may read and write the demo topic only
-    allow User with name = "<DEMO-CLIENT-SUBJECT>" to {READ, WRITE, DESCRIBE} Topic with name = "test-topic";
+    allow User with name = "<DEMO-CLIENT-SUBJECT>" to {READ, WRITE, DESCRIBE} Topic with name = "topic-A";
     allow User with name = "<DEMO-CLIENT-SUBJECT>" to {READ, DESCRIBE} Group with name like "demo-*";
 
     // camel-producer is intentionally NOT granted anything — the deny path:
