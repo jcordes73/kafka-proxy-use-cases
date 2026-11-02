@@ -1,21 +1,33 @@
 # deploy/proxy/04-kafkaservice.yaml — Step 6.5 (docs/06-proxy.md)
 # The upstream (backend) Kafka clusters from Step 3, reached over their TLS
-# listener (9093). strimziKafkaRef lets the operator discover the bootstrap
-# address from the Strimzi Kafka CR's status and auto-trust the Strimzi
-# cluster CA (Secret <cluster>-cluster-ca-cert) — no hardcoded bootstrap, no
-# copied CA. One KafkaService per backend cluster; both live in the proxy
-# namespace.
+# listener (9093) via the Strimzi bootstrap Services. Explicit
+# `bootstrapServers` + `tls.trustAnchorRef` pointing at the Strimzi cluster
+# CA Secrets (copied into the proxy namespace) — this is the pattern the
+# Red Hat proxy operator supports.
+#
+# WATCH SCOPE (verified live): the Red Hat operator (amq-streams-proxy
+# v3.2.2-4, based on a kroxylicious release older than 0.23.0) does NOT
+# resolve cross-namespace `strimziKafkaRef` referents — it looks up the
+# Strimzi Kafka (and its CA) in the KafkaService's own namespace only and
+# reports `ResolvedRefs=False: referenced Kafka resource not found`.
+# Cross-namespace strimziKafkaRef was added in kroxylicious 0.23.0; the
+# upstream release used previously (0.25.1) resolved it fine.
+#
+# One KafkaService per backend cluster; both live in the proxy namespace.
+---
 kind: KafkaService
 apiVersion: kroxylicious.io/v1alpha1
 metadata:
   namespace: kafka-proxy
   name: kafka-cluster-1
 spec:
-  strimziKafkaRef:
-    name: kafka-cluster-1
-    namespace: kafka-cluster-1
-    listenerName: tls
-    trustStrimziCaCertificate: true
+  bootstrapServers: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093
+  tls:
+    trustAnchorRef:
+      name: kafka-cluster-1-cluster-ca-cert
+      key: ca.crt
+      kind: Secret
+      storeType: PEM
   nodeIdRanges:
     - name: brokers
       start: 0
@@ -27,11 +39,13 @@ metadata:
   namespace: kafka-proxy
   name: kafka-cluster-2
 spec:
-  strimziKafkaRef:
-    name: kafka-cluster-2
-    namespace: kafka-cluster-2
-    listenerName: tls
-    trustStrimziCaCertificate: true
+  bootstrapServers: kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9093
+  tls:
+    trustAnchorRef:
+      name: kafka-cluster-2-cluster-ca-cert
+      key: ca.crt
+      kind: Secret
+      storeType: PEM
   nodeIdRanges:
     - name: brokers
       start: 0

@@ -109,7 +109,9 @@ spec:
         allowList:
           - ".*"
     storage:
-      type: ephemeral
+      type: persistent-claim
+      size: 10Gi
+      deleteClaim: false
     # Entity Operator: the Topic Operator reconciles KafkaTopic resources in
     # this namespace (watches the CR's own namespace) — KafkaTopics now take
     # effect (topic-a/b/c from manifests would be created; the existing
@@ -204,7 +206,9 @@ spec:
         allowList:
           - ".*"
     storage:
-      type: ephemeral
+      type: persistent-claim
+      size: 10Gi
+      deleteClaim: false
     # Entity Operator: the Topic Operator reconciles KafkaTopic resources in
     # this namespace (watches the CR's own namespace) — KafkaTopics now take
     # effect (topic-a/b/c from manifests would be created; the existing

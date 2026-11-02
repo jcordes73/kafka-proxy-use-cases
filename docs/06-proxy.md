@@ -12,27 +12,29 @@ cluster / virtual cluster, wire TLS and DNS, and verify the virtual cluster end 
 
 ## 6.1 — Install the Proxy Operator
 
-### Recommended: upstream release artifacts (as deployed here)
+### Recommended: OperatorHub/OLM — the Red Hat build (as deployed here)
 
-The deployed operator is the **upstream kroxylicious 0.25.1 release** (see the divergences box at the top of this guide). [`deploy/proxy/01-proxy-operator-install.yaml`](../deploy/proxy/01-proxy-operator-install.yaml) is derived from the release's `kroxylicious-operator-0.25.1-install.yaml` with the namespace and Deployment renamed `kroxylicious-operator` → `kafka-proxy` — apply it as is:
+The deployed operator is the **officially supported Red Hat build** (`amq-streams-proxy`, Streams for Apache Kafka Proxy), installed via OperatorHub/OLM and version-locked to the Streams 3.2 line — the same style as the Streams cluster operator subscription ([Step 3.1](03-kafka-cluster.md#31--install-the-cluster-operator)). [`deploy/proxy/00-proxy-operator-olm.yaml`](../deploy/proxy/00-proxy-operator-olm.yaml) carries the Subscription (channel `amq-streams-3.2.x`, `startingCSV` pinned, `installPlanApproval: Manual`):
+
+> **Install mode (verified live):** this operator supports **only the AllNamespaces InstallMode** — OwnNamespace/SingleNamespace/MultiNamespace are unsupported (a subscription in `kafka-proxy` with a targeted OperatorGroup fails with "OwnNamespace InstallModeType not supported"). The subscription therefore lives in `openshift-operators` (pre-existing global OperatorGroup — none needed here), while the proxy CRs live in `kafka-proxy` (`deploy/proxy/02–06`); the operator watches all namespaces.
 
 ```bash
-oc apply -f deploy/proxy/01-proxy-operator-install.yaml
+oc apply -f deploy/proxy/00-proxy-operator-olm.yaml
 
-oc wait --for=condition=Available deployment/kafka-proxy \
-  -n kafka-proxy --timeout=120s
+oc get installplan -n openshift-operators
+oc patch installplan <name> -n openshift-operators --type merge \
+  -p '{"spec":{"approved":true}}'
 
-oc get deployments -n kafka-proxy
+oc get csv -n openshift-operators | grep amq-streams-proxy   # Succeeded
 ```
 
-Expected output:
+### Alternative 1: upstream release artifacts
 
-```text
-NAME                      READY  UP-TO-DATE  AVAILABLE
-kafka-proxy               1/1    1           1
-```
+The upstream kroxylicious 0.25.1 release installs from the release archive at [kroxylicious.io](https://kroxylicious.io) — download `kroxylicious-operator-0.25.1.zip`, extract it, rewrite `namespace: .*/namespace: kafka-proxy/` across `install/*.yaml`, and `oc create -f install` (the operator Deployment/SA keep the `kroxylicious-operator` name unless renamed). No ready-to-apply manifest is provided in this repo — the base stack runs the Red Hat build above.
 
-### Alternative: Red Hat subscription artifacts
+> **Capability differences, upstream 0.25.1 vs the Red Hat build (verified live):** the Red Hat proxy operand ships a different filter set — it has `wireFormatVersion` in RecordValidation (upstream 0.25.1 does not), but does **not** ship the `OauthBearerValidation` filter (upstream-only), and its operator does not resolve cross-namespace `strimziKafkaRef` referents (fixed upstream in kroxylicious 0.23.0; the RedHat KafkaService uses explicit `bootstrapServers` + `tls.trustAnchorRef` — see Step 6.5). Demos that wire `OauthBearerValidation` (token validation, token revocation) are upstream-build only.
+
+### Alternative 2: Red Hat subscription artifacts
 
 Download the release archive `streams-3.2-ocp-install-examples.zip` from the [Streams for Apache Kafka software downloads page](https://access.redhat.com/jbossnetwork/restricted/listSoftware.html?downloadType=distributions&product=jboss.amq.streams) and extract it — `install/` contains the YAML manifests for the operator, `examples/` example custom resources for deploying a proxy:
 
@@ -90,6 +92,9 @@ spec:
 oc apply -f kafka-proxy-operator-subscription.yaml
 
 oc get subscriptions -n kafka-proxy
+# Gate on creation first — a condition wait on a not-yet-created CSV blocks until
+# timeout instead of failing fast:
+oc wait --for=create csv --all -n kafka-proxy --timeout=300s
 oc wait --for=jsonpath='{.status.phase}'=Succeeded csv --all -n kafka-proxy --timeout=300s
 ```
 
@@ -160,7 +165,7 @@ spec:
 
 ## 6.5 — Define the Backend Cluster (KafkaService)
 
-The `KafkaService` describes the upstream Kafka cluster. Declare the full range of broker node IDs. The ready-to-apply manifest is [`deploy/proxy/04-kafkaservice.yaml`](../deploy/proxy/04-kafkaservice.yaml) — one `KafkaService` per backend cluster (`kafka-cluster-1` and `kafka-cluster-2`), each using `strimziKafkaRef` to discover the bootstrap address from the Strimzi `Kafka` CR's status and `trustStrimziCaCertificate: true` to auto-trust the cluster CA (no hardcoded bootstrap, no copied CA):
+The `KafkaService` describes the upstream Kafka cluster. Declare the full range of broker node IDs. The ready-to-apply manifest is [`deploy/proxy/04-kafkaservice.yaml`](../deploy/proxy/04-kafkaservice.yaml) — one `KafkaService` per backend cluster (`kafka-cluster-1` and `kafka-cluster-2`), each using explicit `bootstrapServers` (the Strimzi bootstrap Service over the `tls` listener, 9093) and `tls.trustAnchorRef` pointing at the Strimzi cluster CA Secret copied into the proxy namespace:
 
 ```bash
 oc apply -f deploy/proxy/04-kafkaservice.yaml
@@ -168,9 +173,10 @@ oc apply -f deploy/proxy/04-kafkaservice.yaml
 
 Field notes (full manifests in the deploy file):
 
-- `spec.strimziKafkaRef` — `name`/`namespace` of the Strimzi `Kafka` resource and the `listenerName: tls` to connect over (requires Strimzi 0.49+; specify either `strimziKafkaRef` or `bootstrapServers`, not both).
-- `spec.tls.trustAnchorRef` — for non-Strimzi clusters; accepts a `Secret`, and the operator can auto-trust the Strimzi-generated CA anchor for Streams-managed clusters.
-- `nodeIdRanges` must cover **all** broker node IDs in the target cluster (`start` and `end` inclusive) — `0`–`2` for the cluster deployed in [Step 3](03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka). For an external cluster, use `bootstrapServers` with its reachable address instead.
+- `spec.bootstrapServers` — the Strimzi bootstrap Service address (`kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093`; specify either `bootstrapServers` or `strimziKafkaRef`, not both).
+- `spec.tls.trustAnchorRef` — a reference to the cluster CA bundle: `name: kafka-cluster-1-cluster-ca-cert`, `key: ca.crt`, `kind: Secret`, `storeType: PEM` (the Strimzi cluster CA Secret, copied into `kafka-proxy`).
+- **Verified live (Red Hat operator)**: the Red Hat build does **not** resolve cross-namespace `strimziKafkaRef` referents — it looks up the Strimzi `Kafka` (and its CA) in the `KafkaService`'s own namespace only and reports `ResolvedRefs=False: referenced Kafka resource not found`. Cross-namespace resolution was added upstream in kroxylicious 0.23.0; on the Red Hat build use the explicit `bootstrapServers` + copied-CA pattern above.
+- `nodeIdRanges` must cover **all** broker node IDs in the target cluster (`start` and `end` inclusive) — `0`–`2` for the cluster deployed in [Step 3](03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka).
 
 ## 6.6 — (Optional) Add a Filter
 
@@ -326,9 +332,10 @@ oc get ingresscontrollers.operator.openshift.io -n openshift-ingress-operator de
      -o jsonpath='{.status.conditions}' | jq
    ```
 
-3. **Wait for the proxy pods to be ready.** The operator creates a `Deployment` named after the `KafkaProxy` resource (here: `simple`):
+3. **Wait for the proxy pods to be ready.** The operator creates a `Deployment` named after the `KafkaProxy` resource (here: `simple`) — gate on creation first, since the operator (not you) creates it:
 
    ```bash
+   oc wait --for=create deployment/simple -n kafka-proxy --timeout=300s
    oc wait --for=condition=Available deployment/simple -n kafka-proxy --timeout=120s
    oc get pods -n kafka-proxy
    ```

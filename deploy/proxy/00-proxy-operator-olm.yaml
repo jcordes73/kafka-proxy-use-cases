@@ -1,0 +1,40 @@
+# deploy/proxy/00-proxy-operator-olm.yaml — Step 6.1 (docs/06-proxy.md)
+# Streams for Apache Kafka Proxy operator, installed via OperatorHub/OLM
+# (the officially supported Red Hat downstream build). The alternative
+# upstream-release install path is described in docs/06-proxy.md (Step 6.1).
+#
+# NOTE (verified live): this operator supports ONLY the AllNamespaces
+# InstallMode — OwnNamespace/SingleNamespace/MultiNamespace are unsupported
+# (a subscription in kafka-proxy with a targeted OperatorGroup fails with
+# "OwnNamespace InstallModeType not supported"). So the subscription lives
+# in openshift-operators, which has a pre-existing global OperatorGroup (no
+# OperatorGroup needed here) — the same location as the COO subscription.
+# The proxy CRs themselves (KafkaProxy, KafkaProxyIngress, KafkaService,
+# VirtualKafkaCluster, KafkaProtocolFilter) live in kafka-proxy
+# (deploy/proxy/02–06); the operator watches all namespaces.
+#
+# Channel amq-streams-3.2.x is version-pinned to the Streams 3.2 release
+# line, matching the Streams cluster operator subscription
+# (deploy/kafka/00-cluster-operator-olm.yaml). installPlanApproval: Manual
+# so OLM does not auto-upgrade across minor versions — approve InstallPlans
+# deliberately:
+#   oc get installplan -n openshift-operators
+#   oc patch installplan <name> -n openshift-operators --type merge \
+#     -p '{"spec":{"approved":true}}'
+#
+# Verify after applying:
+#   oc get csv -n openshift-operators | grep amq-streams-proxy
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: amq-streams-proxy
+  namespace: openshift-operators
+spec:
+  channel: amq-streams-3.2.x
+  name: amq-streams-proxy
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Manual
+  # Pinned to the CSV verified on the tested cluster — advance deliberately:
+  startingCSV: amq-streams-proxy.v3.2.2-4

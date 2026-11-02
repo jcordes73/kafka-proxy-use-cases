@@ -18,6 +18,9 @@ oc get installplan -n kafka-console
 oc -n kafka-console patch installplan <install-plan-name> --type merge \
   -p '{"spec":{"approved":true}}'
 
+# Gate on creation first — a condition wait on a not-yet-created CSV blocks until
+# timeout instead of failing fast:
+oc wait --for=create csv --all -n kafka-console --timeout=300s
 oc wait --for=jsonpath='{.status.phase}'=Succeeded \
   csv/amq-streams-console.v3.2.2-3 -n kafka-console --timeout=300s
 oc get deployments -n kafka-console
@@ -46,6 +49,8 @@ The ready-to-apply manifest is [`deploy/console/02-kafka-console.yaml`](../deplo
 
 ```bash
 envsubst < deploy/console/02-kafka-console.yaml | oc apply -f -
+# The operator (not you) creates the Deployment — gate on creation first:
+oc -n kafka-console wait --for=create deployment/kafka-console-console-deployment --timeout=300s
 oc -n kafka-console rollout status deploy/kafka-console-console-deployment --timeout=180s
 
 # The UI answers 200 on the hostname from spec.hostname (307 to the
@@ -126,6 +131,8 @@ takes a CSRF-token POST:
 
 ```bash
 envsubst < deploy/console/02-kafka-console.yaml | oc apply -f -
+# The operator (not you) creates the Deployment — gate on creation first:
+oc -n kafka-console wait --for=create deployment/kafka-console-console-deployment --timeout=300s
 oc -n kafka-console rollout status deploy/kafka-console-console-deployment --timeout=180s
 
 oc -n kafka-console logs deploy/kafka-console-console-deployment | grep 'OIDC server is not available'

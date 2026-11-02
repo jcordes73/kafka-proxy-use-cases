@@ -91,7 +91,7 @@ oc -n kafka-proxy rollout status deploy/simple --timeout=120s
 oc -n kafka-proxy exec deploy/simple -- ls /opt/kroxylicious/classpath-plugins/sample-filter/
 ```
 
-> The operator does not validate the operand image — keep the custom image's base in lockstep with the operator version: rebuild from the matching `quay.io/kroxylicious/proxy` tag whenever you upgrade the operator ([Step 6.1](06-proxy.md#61--install-the-proxy-operator)). `KROXYLICIOUS_IMAGE` is deliberately not baked into [`deploy/proxy/01-proxy-operator-install.yaml`](../deploy/proxy/01-proxy-operator-install.yaml) — the base stack runs the stock image.
+> The operator does not validate the operand image — keep the custom image's base in lockstep with the operator version: rebuild from the matching `quay.io/kroxylicious/proxy` tag whenever you upgrade the operator ([Step 6.1](06-proxy.md#61--install-the-proxy-operator)). The base stack runs the stock operand image of the Red Hat build.
 
 ## 10.6 — Configure and wire the filter
 

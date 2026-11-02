@@ -7,12 +7,12 @@
 # (full `envsubst` would break the interpolation ref; plain `oc apply` would
 # leave the domain variable unsubstituted).
 #
-# The Authorization filter needs the authenticated subject, provided by the
-# OauthBearerValidation filter: it validates client JWTs against Keycloak's
-# JWKS (rejecting invalid/expired tokens at the proxy) and builds the subject
-# from the token's preferred_username claim (service-account-<clientId>) —
-# the broker still decides whether authentication succeeds (validated
-# passthrough), the proxy enforces authorization on top.
+# The Authorization filter needs the authenticated subject. On the upstream
+# 0.25.1 build that subject was provided by the OauthBearerValidation filter
+# (validating client JWTs against Keycloak's JWKS) — that filter is NOT shipped
+# in the Red Hat proxy operand, so on the Red Hat build the oauth-validation
+# filter is dropped from the virtual clusters' chains (subjects fall back to the
+# SASL exchange relayed upstream; verify ACL behavior per build).
 #
 # Policy (least-privilege, deny-by-default via `otherwise deny`):
 #   - infrastructure clients (kafka-bridge, kafka-console-kafka, kafka-admin):
@@ -85,6 +85,17 @@ spec:
     # ACL rules below cannot match (verified live). preferred_username matches
     # the principals the brokers themselves derive (Step 3.2 oauth.username.claim).
     subClaimName: preferred_username
+---
+apiVersion: kroxylicious.io/v1alpha1
+kind: KafkaProtocolFilter
+metadata:
+  name: sasl-inspection
+  namespace: kafka-proxy
+spec:
+  type: SaslInspection
+  configTemplate:
+    enabledMechanisms: ["OAUTHBEARER"]
+    requireAuthentication: true
 ---
 apiVersion: kroxylicious.io/v1alpha1
 kind: KafkaProtocolFilter

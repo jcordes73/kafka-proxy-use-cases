@@ -12,13 +12,8 @@
 #
 # MM2's internal topics (config/offsets/status) are created on the TARGET
 # cluster. Replication prefixes mirrored resources with the source alias
-# (kafka-cluster-1.<topic>).
-kind: Namespace
-apiVersion: v1
-metadata:
-  name: kafka-mm2
-  annotations:
-    openshift.io/description: "MirrorMaker 2, secure backend replication (kafka-cluster-1 → kafka-cluster-2)"
+# (kafka-cluster-1.<topic>). The kafka-mm2 namespace ships in 00-namespace.yaml
+# (created before the Cluster Operator in Step 3.1).
 ---
 # kind: KafkaMirrorMaker2
 apiVersion: kafka.strimzi.io/v1

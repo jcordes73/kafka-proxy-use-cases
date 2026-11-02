@@ -1,4 +1,4 @@
-# deploy/demos/02-record-validation-demo.yaml — Demo scenarios, Demo 2 (docs/11-demos.md)
+# deploy/demos/02-record-validation-demo.yaml — Demo scenarios, Demo 2 (docs/demos/02-record-validation.md)
 # Record Validation demo: the KafkaProtocolFilter that validates record values
 # against the JSON schema registered in Apicurio Registry (Step 5.4), scoped to
 # topic-A — other topics pass through unvalidated (no defaultRule). topic-A is
@@ -29,6 +29,5 @@ spec:
           schemaValidationConfig:
             apicurioRegistryUrl: http://apicurio-registry-app-service.kafka-registry.svc.cluster.local:8080
             apicurioId: ${APICURIO_CONTENT_ID}
-            schemaType: JSON_SCHEMA
           allowNulls: false
           allowEmpty: false

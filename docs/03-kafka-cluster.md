@@ -35,7 +35,7 @@ If you don't already have a Kafka cluster, deploy one using **Streams for Apache
 
 ## 3.2 — Create the Kafka cluster
 
-Kafka runs exclusively in **KRaft mode** (no ZooKeeper): you define the cluster with a `Kafka` resource plus `KafkaNodePool` resources. Nodes take the role of **broker**, **controller**, or both (dual-role). This dev example uses a single dual-role node pool with ephemeral storage.
+Kafka runs exclusively in **KRaft mode** (no ZooKeeper): you define the cluster with a `Kafka` resource plus `KafkaNodePool` resources. Nodes take the role of **broker**, **controller**, or both (dual-role). This example uses a single dual-role node pool with **persistent-claim storage** (`10Gi` per broker, `deleteClaim: false` so the PVCs survive a cluster uninstall; the `class` property is omitted, so PVCs come from the cluster's default StorageClass — set it if your cluster has no default or you want a specific one).
 
 The ready-to-apply manifests are [`deploy/kafka/01-kafka-nodepool.yaml`](../deploy/kafka/01-kafka-nodepool.yaml) and [`deploy/kafka/02-kafka.yaml`](../deploy/kafka/02-kafka.yaml). **`02-kafka.yaml` contains `${OPENSHIFT_APPS_DOMAIN}`** (the brokers' `oauth.valid.issuer.uri`) — it must go through envsubst; plain `oc apply` leaves the literal `${...}` in the broker config and the rolled broker **crash-loops** with "Value of validIssuerUri not a valid URI" (the Kafka CR then goes NotReady, which empties `status.listeners` and breaks the console's Strimzi-kind connections):
 
@@ -52,7 +52,7 @@ oc get services -n kafka-cluster-1
 
 Field notes (full manifests in the deploy files):
 
-- `KafkaNodePool` — `dual-role` nodes (`controller` + `broker` roles), `replicas: 3`, `ephemeral` storage for dev.
+- `KafkaNodePool` — `dual-role` nodes (`controller` + `broker` roles), `replicas: 3`, **persistent-claim storage** (`size: 10Gi`, `deleteClaim: false`; `class` omitted = the cluster's default StorageClass). ⚠️ Strimzi **cannot update** a node pool's storage — changing the type/size of an existing pool is not supported; a fresh deploy picks the new storage up, or delete and recreate the pool (and its PVCs) on an existing cluster. KRaft metadata shares the node's volume by default (the `kraftMetadata: shared` designation only matters for JBOD volumes).
 - `spec.kafka.listeners` — `plain` (9092, no TLS/auth) + `tls` (9093, TLS with **SASL/OAUTHBEARER** — see the note below).
 - `spec.kafka.config` — `inter.broker.listener.name: plain` (inter-broker communication stays on the unauthenticated listener), replication factors, `min.insync.replicas`, and **`auto.create.topics.enable: false`** — no auto-created topics (Kafka 4.x defaults to `true`): every topic must be created explicitly (`oc create topic`, a `KafkaTopic` resource, or the console), so a misspelled or un-created topic fails on produce instead of being silently created with the defaults.
 - `spec.entityOperator` — **`topicOperator: {}`** reconciles `KafkaTopic` resources in the cluster's namespace (without it, `KafkaTopic` resources are inert — verified live). It sits under `spec`, a sibling of `kafka` — nesting it inside `spec.kafka` gets silently pruned and no operator deploys. ⚠️ The Topic Operator **cannot change a topic's replication factor**: if a topic already exists with a different RF than `spec.replicas`, reconciliation fails with "Replication factor change not supported" — the spec must match reality, or the topic must be deleted (via its `KafkaTopic`) and recreated by re-applying the manifest (how the demo topics moved from RF 1 to RF 3, [`deploy/kafka/03-topics.yaml`](../deploy/kafka/03-topics.yaml), verified live). A `userOperator: {}` can be added alongside to manage `KafkaUser` resources (not needed here — clients authenticate with Keycloak service accounts, Step 2.5).
@@ -114,3 +114,37 @@ Notes:
 - **Direct-broker checks**: with the DMZ in place, "consume directly from the broker" verification (e.g., checking ciphertext after enabling Record Encryption) must run from the cluster's or `kafka-proxy` namespace — from any other namespace it will be denied. That denial is the point.
 - **Do not** add a `kubernetes.io/metadata.name: kafka` label requirement to policy 2 — podSelector rules already match by namespace; keep the same-namespace rule as shown.
 - For defense in depth, also restrict the `kafka-proxy` namespace's **egress** to the Kafka brokers (plus the operator/API servers) so the proxy pod cannot be used as a pivot into the cluster.
+
+## 3.5 — Quotas (per-principal, broker-enforced)
+
+Kafka quotas are **broker-enforced rate limits** keyed per authenticated principal (`--entity-type users`) or per client id (`--entity-type clients`). Four knobs are available: `producer_byte_rate` (bytes/s of produce traffic), `consumer_byte_rate` (bytes/s of fetch traffic), `request_percentage` (broker CPU time share, %), and `controller_mutation_rate` (metadata mutations/s). Quotas govern **how fast** a principal may work — they complement, not replace, authorization: the proxy's ACL filter ([Step 6.6](06-proxy.md#66--optional-add-a-filter)) governs *what* a principal may do.
+
+**Where the principal comes from in this stack:** the proxy relays the client's SASL/OAUTHBEARER exchange to the brokers (SASL passthrough — the proxy cannot authenticate upstream itself, [Step 2.5](02-keycloak.md#25--client-authentication-at-the-proxy)), so the broker session is authenticated as the **end client's Keycloak principal** — the token's `preferred_username`: `service-account-<clientId>` for the service-account clients (`service-account-camel-producer`, `service-account-kafka-bridge`, `service-account-demo-client`), or the realm username (`kafka-user-a`, `kafka-admin`, `demo`) for password-grant users. Per-user quotas therefore apply **to the end client through the proxy**; the proxy itself never appears as the quota principal. (A broker throttling a quota-exceeded session delays its responses, which propagates back through the proxy to the client.)
+
+Set and verify quotas dynamically with `kafka-configs.sh` (standard Kafka tooling, shipped in the Strimzi image) — commands verified locally on a KRaft Kafka 4.1; the config is stored in the cluster's metadata (no broker restart, no client change):
+
+```bash
+# From a pod in the cluster's namespace — the plain listener (9092, no auth) is
+# reachable same-namespace (the Step 3.4 DMZ denies it from everywhere else, which
+# is fine: quota administration is a broker-side, operator-level task)
+oc run kafka-quotas --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-cluster-1 -- \
+  bin/kafka-configs.sh --bootstrap-server kafka-cluster-1-kafka-bootstrap:9092 \
+  --alter --entity-type users --entity-name service-account-camel-producer \
+  --add-config 'producer_byte_rate=1048576,consumer_byte_rate=2097152,request_percentage=50'
+
+# Verify — quotas print as `user-principal '<name>'`
+oc run kafka-quotas --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-cluster-1 -- \
+  bin/kafka-configs.sh --bootstrap-server kafka-cluster-1-kafka-bootstrap:9092 \
+  --describe --entity-type users
+# Quota configs for user-principal 'service-account-camel-producer' are consumer_byte_rate=2097152.0, request_percentage=50.0, producer_byte_rate=1048576.0
+
+# Remove one knob (re-running --alter with the same values is a no-op):
+oc run kafka-quotas --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-cluster-1 -- \
+  bin/kafka-configs.sh --bootstrap-server kafka-cluster-1-kafka-bootstrap:9092 \
+  --alter --entity-type users --entity-name service-account-camel-producer \
+  --delete-config 'request_percentage'
+```
+
+`--entity-type clients` keys on the `client.id` the **brokers** see — with the proxy relaying requests, prefer per-user quotas (per-client-id applies only if the client's `client.id` reaches the broker unchanged).
+
+**Strimzi `KafkaUser` quotas — why not, for this stack:** a `KafkaUser` resource supports `spec.quota` (`producerByteRate`, `consumerByteRate`, `requestPercentage`, `controllerMutationRate`), but the User Operator keys the quota on the principal format of the KafkaUser's `spec.authentication.type` — `CN=<name>` for `tls`/`tls-external` (mTLS principals), `<name>` for `scram-sha-512`. There is **no OAuth authentication type for `KafkaUser`**, and this stack's listeners are OAUTHBEARER-only (Keycloak), so a `KafkaUser` named to match an OAuth principal would need `scram-sha-512` auth — creating an unusable SCRAM credential just to carry the quota. Setting the quota directly with `kafka-configs.sh` (above) keys it on the OAuth principal with no side-effect credentials. A `KafkaUser` with `spec.quota` remains the right tool when clients authenticate with certificates or SCRAM managed by Strimzi.

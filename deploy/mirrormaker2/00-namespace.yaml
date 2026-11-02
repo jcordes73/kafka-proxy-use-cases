@@ -1,0 +1,13 @@
+# deploy/mirrormaker2/00-namespace.yaml — Step 4 (docs/04-mirrormaker2.md)
+# The kafka-mm2 namespace, shipped separately so it can be created BEFORE the
+# Cluster Operator in Step 3.1 (the Kafka OperatorGroup targets it — on a fresh
+# cluster OLM returns 403 for informers against non-existent namespaces, which
+# kills the operator). Applying the deploy/mirrormaker2/ directory applies this
+# file first (alphabetical order).
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kafka-mm2
+  annotations:
+    openshift.io/description: "MirrorMaker 2 replication (kafka-cluster-1 -> kafka-cluster-2)"

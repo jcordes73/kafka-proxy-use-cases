@@ -1,4 +1,4 @@
-# deploy/demos/11-record-encryption.yaml — Demo 11 (docs/11-demos.md)
+# deploy/demos/11-record-encryption.yaml — Demo 11 (docs/demos/11-record-encryption.md)
 # Record Encryption at rest: envelope encryption at the proxy with a
 # dev-mode HashiCorp Vault as the KMS (Transit engine).
 #

@@ -1,4 +1,4 @@
-# deploy/demos/10-mm2-failover.yaml — Demo 10 (docs/11-demos.md)
+# deploy/demos/10-mm2-failover.yaml — Demo 10 (docs/demos/10-mm2-failover.md)
 # MirrorMaker 2 failover/failback variant: same replication flow as
 # deploy/mirrormaker2/01-mirrormaker2.yaml (plain listener, no auth) PLUS the
 # checkpoint and heartbeat connectors:

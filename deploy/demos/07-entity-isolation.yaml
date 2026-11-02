@@ -1,4 +1,4 @@
-# deploy/demos/07-entity-isolation.yaml — Demo 7 (docs/11-demos.md)
+# deploy/demos/07-entity-isolation.yaml — Demo 7 (docs/demos/07-entity-isolation.md)
 # Entity Isolation (preview, new in 3.2): each authenticated principal gets a
 # private namespace for consumer groups and transactional IDs within the shared
 # cluster. Two principals using the SAME group name see two distinct groups on

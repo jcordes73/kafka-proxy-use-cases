@@ -1,0 +1,85 @@
+# deploy/observability/07-perses-dashboards.yaml — Step 1.10 (docs/01-user-workload-monitoring.md)
+# Datasource + RBAC for the Perses console UI (Observe > Dashboards
+# (Perses)) — apply 07 FIRST, the dashboards in 09-perses-strimzi-dashboards.yaml
+# reference this datasource. Namespaces map to Perses projects: these CRs live in
+# `kafka` (the namespace where the Streams Cluster Operator runs), so
+# the dashboards appear in the kafka project and
+# namespace RBAC scopes who can view or edit them.
+#
+# DATASOURCE: the PLATFORM Thanos Querier
+# (https://thanos-querier.openshift-monitoring.svc.cluster.local:9091),
+# queried with a bearer token from a ServiceAccount bound to
+# cluster-monitoring-view. Verified on the tested cluster: there is NO
+# `thanos-querier` service in openshift-user-workload-monitoring — the
+# user-workload series are served through the platform Thanos Querier's
+# tenancy (series carry `prometheus="openshift-user-workload-monitoring/
+# user-workload"`). Port 9091 is the web/API port that accepts bearer
+# tokens; 9092 rejects them (HTTP 400). The `namespace=` params in the URL
+# scope the tenancy (cluster-monitoring-view is required to see UWM series
+# from other namespaces). The PersesDatasource proxy secret MUST be named
+# `${datasource-name}-secret` (user-workload-monitoring-secret) and carries
+# the token under the `tokens` key. The secret is CLI-created (SA tokens
+# expire — re-create periodically):
+#
+#   oc apply -f deploy/observability/07-perses-dashboards.yaml
+#   oc create token perses-datasource -n kafka --duration=8760h
+#   oc create secret generic user-workload-monitoring-secret \
+#     --from-literal=tokens=<token> -n kafka
+#   oc wait --for=condition=Reconciled -n kafka persesdashboards --all --timeout=180s
+#
+# PANELS: the Perses plugin schemas validate strictly — StatChart
+# `format.unit` has no `short` value (omit `format` or use e.g.
+# `percent-decimal`), and TimeSeriesChart `visual.stack` only allows
+# `all`/`percent` (omit it for plain lines).
+#
+# Then open Observe > Dashboards (Perses) in the console and select the
+# kafka namespace. Panel queries may need adjusting to your metric
+# labels — the `namespace` label is attached to scraped series by the
+# user-workload monitoring stack.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: perses-datasource
+  namespace: kafka
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: perses-datasource-cluster-monitoring-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+- kind: ServiceAccount
+  name: perses-datasource
+  namespace: kafka
+---
+apiVersion: perses.dev/v1alpha2
+kind: PersesDatasource
+metadata:
+  name: user-workload-monitoring
+  namespace: kafka
+spec:
+  instanceSelector:
+    matchLabels:
+      app.kubernetes.io/instance: perses-observability-operator
+  config:
+    default: true
+    display:
+      name: User-workload Monitoring
+    plugin:
+      kind: PrometheusDatasource
+      spec:
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091?namespace=kafka-cluster-1&namespace=kafka-cluster-2&namespace=kafka-proxy&namespace=kafka-auth&namespace=kafka-http-bridge&namespace=kafka-console&namespace=kafka-producer&namespace=kafka-consumer
+            secret: user-workload-monitoring-secret
+  client:
+    tls:
+      enable: true
+      caCert:
+        type: file
+        certPath: /ca/service-ca.crt

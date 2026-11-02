@@ -1,0 +1,49 @@
+# deploy/observability/06-perses.yaml — Step 1.10 (docs/01-user-workload-monitoring.md)
+# Perses dashboards in the OpenShift console, via the Cluster Observability
+# Operator (COO) monitoring UIPlugin — the Red Hat build of Perses
+# (TECHNOLOGY PREVIEW). COO installs into openshift-operators (a pre-existing
+# OperatorGroup is already there — no Namespace/OperatorGroup needed) and
+# brings the Perses Operator + CRDs (PersesDashboard, PersesDatasource,
+# PersesGlobalDatasource) plus the Observe > Dashboards (Perses) console menu.
+# The datasource and dashboards themselves are
+# deploy/observability/07-perses-dashboards.yaml.
+#
+# channel `stable` is the default COO channel on the tested cluster
+# (4.22.18; `fast` tracks the same CSV today). installPlanApproval: Manual so
+# OLM does not auto-upgrade across versions — approve InstallPlans
+# deliberately:
+#   oc get installplan -n openshift-operators
+#   oc patch installplan <name> -n openshift-operators --type merge \
+#     -p '{"spec":{"approved":true}}'
+#
+# Verify after applying:
+#   oc get csv -n openshift-operators | grep cluster-observability
+#   oc wait --for=condition=Available --timeout=120s uiplugins monitoring
+# The Observe > Dashboards (Perses) menu appears in the console once the
+# UIPlugin is Available.
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-observability-operator
+  namespace: openshift-operators
+spec:
+  channel: stable
+  name: cluster-observability-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Manual
+  # Pinned to the CSV verified on the tested cluster — advance deliberately:
+  startingCSV: cluster-observability-operator.v1.5.3
+---
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: monitoring
+spec:
+  type: Monitoring
+  monitoring:
+    # Enables the Perses dashboards UI; the COO deploys the Perses Operator
+    # and a Perses server instance for it.
+    perses:
+      enabled: true

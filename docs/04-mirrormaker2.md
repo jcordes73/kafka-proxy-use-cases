@@ -2,7 +2,7 @@
 
 > [↑ Setup overview](../openshift-setup.md) · prev: [Step 3: Kafka cluster](03-kafka-cluster.md) · next: [Step 5: Apicurio Registry](05-apicurio-registry.md)
 
-With two Kafka clusters deployed (Steps [0.2](03-kafka-cluster.md#32--create-the-kafka-cluster)), **MirrorMaker 2** replicates data between them: topics and consumer groups from `kafka-cluster-1` to `kafka-cluster-2`. This is the migration pattern from use case [7 in the guide](../README.md#7-cluster-migration--upstream-switching) — run MM2 to keep the target in sync, then switch the proxy's virtual-cluster upstream to the new cluster and clients are cut over without knowing.
+With two Kafka clusters deployed (Steps [0.2](03-kafka-cluster.md#32--create-the-kafka-cluster)), **MirrorMaker 2** replicates data between them: topics and consumer groups from `kafka-cluster-1` to `kafka-cluster-2`. This is the migration pattern from use case [5 in the guide](../README.md#5-cluster-migration--upstream-switching) — run MM2 to keep the target in sync, then switch the proxy's virtual-cluster upstream to the new cluster and clients are cut over without knowing.
 
 > **Deployment order:** in this guide MM2 is deployed **fourth** — immediately after the Kafka clusters (Step 3) and before the proxy; see the Guide map in the [setup overview](../openshift-setup.md). Its only dependencies are both clusters being Ready and the Cluster Operator watching `kafka-mm2` (the OperatorGroup extension below) — the DMZ NetworkPolicy allowance for `kafka-mm2` on the `plain` listener is created by the operator when the CR is applied, so replicating from the start means the target is in sync from the first record.
 

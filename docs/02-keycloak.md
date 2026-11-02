@@ -14,6 +14,9 @@ The operator is installed via OLM. The ready-to-apply manifest is [`deploy/keycl
 oc apply -f deploy/keycloak/01-kafka-auth-operator.yaml
 
 oc get subscriptions -n kafka-auth
+# Gate on creation first — a condition wait on a not-yet-created CSV blocks until
+# timeout instead of failing fast:
+oc wait --for=create csv --all -n kafka-auth --timeout=300s
 oc wait --for=jsonpath='{.status.phase}'=Succeeded csv --all -n kafka-auth --timeout=300s
 oc get pods -n kafka-auth
 ```
@@ -195,7 +198,7 @@ The proxy supports client authentication, and identity-aware filters (`Authoriza
 
 The alternative — SASL/PLAIN with `scram-sha-512` `KafkaUser` credentials — is a valid, simpler option if you don't need token-based identity: swap the listener's `authentication` for `type: plain` and provision `KafkaUser` resources instead.
 
-**The OAuth data path is implemented in the ready-to-apply manifests** (use case [5 in the guide](../README.md#5-oidc--oauth-20-authentication-with-red-hat-build-of-keycloak)):
+**The OAuth data path is implemented in the ready-to-apply manifests** (use case [4 in the guide](../README.md#4-oidc--oauth-20-authentication-with-red-hat-build-of-keycloak)):
 
 1. **Broker listener** — [deploy/kafka/02-kafka.yaml](../deploy/kafka/02-kafka.yaml) configures the `tls` listener with `custom` auth + the Strimzi OAuth callback handlers (`sasl.enabled.mechanisms: OAUTHBEARER` only, `inter.broker.listener.name: plain`).
 2. **Keycloak clients** — [deploy/keycloak/04-kafka-realm-import.yaml](../deploy/keycloak/04-kafka-realm-import.yaml) creates the per-workload service-account clients (client_credentials grant, 5-minute tokens). Create a Kubernetes Secret per workload for the client secret before deploying the clients (the realm import does not create Secrets).

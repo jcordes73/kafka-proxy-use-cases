@@ -1,17 +1,13 @@
 # deploy/keycloak/01-kafka-auth-operator.yaml — Step 2.1 (openshift-setup.md)
-# Namespace + OperatorGroup + Subscription for the Red Hat build of Keycloak
-# operator, applied as a single transaction (the OperatorGroup must exist when
-# the Subscription is validated).
+# OperatorGroup + Subscription for the Red Hat build of Keycloak operator,
+# applied as a single transaction (the OperatorGroup must exist when
+# the Subscription is validated). The kafka-auth namespace ships in
+# 00-namespace.yaml (created before the Keycloak Secrets in deploy order 2).
 #
 # NOTE: installPlanApproval is Manual so OLM does not auto-upgrade RHBK server
 # versions (upgrades can require DB migration and have no downgrade path).
 # Approve InstallPlans deliberately: `oc get installplan -n kafka-auth` then
 # `oc patch installplan <name> -n kafka-auth --type merge -p '{"spec":{"approved":true}}'`.
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: kafka-auth
 ---
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup

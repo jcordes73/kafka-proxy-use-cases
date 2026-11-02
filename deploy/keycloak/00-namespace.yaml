@@ -1,0 +1,13 @@
+# deploy/keycloak/00-namespace.yaml — Step 2.1 (openshift-setup.md)
+# The kafka-auth namespace, shipped separately so it can be created BEFORE the
+# Keycloak Secrets in deploy order 2 (the Keycloak pod mounts them before it can
+# start — the namespace must exist or the Secret creates fail with
+# `namespaces "kafka-auth" not found` on a fresh cluster). Applying the
+# deploy/keycloak/ directory applies this file first (alphabetical order).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-auth
+  annotations:
+    openshift.io/description: "Red Hat build of Keycloak (OAuth/OIDC auth for the Kafka proxy)"

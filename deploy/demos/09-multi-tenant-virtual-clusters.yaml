@@ -1,4 +1,4 @@
-# deploy/demos/09-multi-tenant-virtual-clusters.yaml — Demo 9 (docs/11-demos.md)
+# deploy/demos/09-multi-tenant-virtual-clusters.yaml — Demo 9 (docs/demos/09-multi-tenant-virtual-clusters.md)
 # Multi-tenancy: one proxy, many logical clusters. The stack already exposes
 # two virtual clusters over two physical clusters (deploy/proxy/05). This demo
 # adds a THIRD virtual cluster over the SAME physical backend as

@@ -1,0 +1,29 @@
+# deploy/kafka/00-cluster-namespaces.yaml — Step 3.1 (openshift-setup.md)
+# The cluster + DMZ namespaces, shipped separately so they can be created BEFORE
+# the Cluster Operator (the OperatorGroup targets them — on a fresh cluster OLM
+# returns 403 for informers against non-existent namespaces, which kills the
+# operator). Applying the deploy/kafka/ directory applies this file first
+# (00-cluster-namespaces sorts before 00-cluster-operator-olm).
+# kafka-mm2 (also targeted by the OperatorGroup) ships in
+# deploy/mirrormaker2/00-namespace.yaml.
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kafka-cluster-1
+  annotations:
+    openshift.io/description: "Kafka cluster 1 (secure backend for the proxy)"
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kafka-cluster-2
+  annotations:
+    openshift.io/description: "Kafka cluster 2 (MirrorMaker 2 target)"
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: kafka-http-bridge
+  annotations:
+    openshift.io/description: "Kafka HTTP Bridge DMZ namespace"

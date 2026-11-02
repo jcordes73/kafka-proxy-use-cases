@@ -1,4 +1,4 @@
-# deploy/demos/06-authorization-filters.yaml — Demo 6 (docs/11-demos.md)
+# deploy/demos/06-authorization-filters.yaml — Demo 6 (docs/demos/06-proxy-authorization.md)
 # Authorization at the proxy: SaslInspection extracts the end-client principal
 # from the SASL/OAUTHBEARER exchange; the Authorization filter enforces ACL
 # rules BEFORE requests reach the brokers.
@@ -10,7 +10,7 @@
 # The ACL rules ConfigMap uses the placeholder <DEMO-CLIENT-SUBJECT> — replace
 # it with the principal SaslInspection derives for the demo-client token
 # (the JWT `sub` claim for OAUTHBEARER — decode the token to discover it,
-# see docs/11-demos.md Demo 6). Then apply this file: it REPLACES the
+# see docs/demos/06-proxy-authorization.md). Then apply this file: it REPLACES the
 # kafka-cluster-1 VirtualKafkaCluster from deploy/proxy/05-virtualkafkacluster.yaml.
 # Revert with: oc apply -f deploy/proxy/05-virtualkafkacluster.yaml
 ---

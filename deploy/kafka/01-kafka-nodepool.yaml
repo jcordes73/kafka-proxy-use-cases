@@ -1,30 +1,10 @@
 # deploy/kafka/01-kafka-nodepool.yaml — Step 3.2 (docs/03-kafka-cluster.md)
-# One dual-role (broker + controller) KRaft node pool per cluster, dev-sized
-# (ephemeral storage). Cluster names match their namespaces: kafka-cluster-1
-# and kafka-cluster-2.
-# The cluster namespaces ship here (nothing else creates them — the Cluster
-# Operator's watch scope includes them from Step 3.1, and OLM returns 403
-# for informers against non-existent namespaces, which kills the operator):
-kind: Namespace
-apiVersion: v1
-metadata:
-  name: kafka-cluster-1
-  annotations:
-    openshift.io/description: "Kafka cluster 1 (secure backend for the proxy)"
----
-kind: Namespace
-apiVersion: v1
-metadata:
-  name: kafka-cluster-2
-  annotations:
-    openshift.io/description: "Kafka cluster 2 (MirrorMaker 2 target)"
----
-kind: Namespace
-apiVersion: v1
-metadata:
-  name: kafka-http-bridge
-  annotations:
-    openshift.io/description: "Kafka HTTP Bridge DMZ namespace"
+# One dual-role (broker + controller) KRaft node pool per cluster with
+# persistent-claim storage (10Gi per broker; PVCs survive a cluster uninstall
+# — deleteClaim: false). Cluster names match their namespaces: kafka-cluster-1
+# and kafka-cluster-2. The cluster namespaces ship in 00-cluster-namespaces.yaml
+# (created before the Cluster Operator in Step 3.1); kafka-mm2 ships in
+# deploy/mirrormaker2/00-namespace.yaml.
 ---
 kind: KafkaNodePool
 apiVersion: kafka.strimzi.io/v1
@@ -39,7 +19,10 @@ spec:
     - controller
     - broker
   storage:
-    type: ephemeral
+    type: persistent-claim
+    size: 10Gi
+    # class: <storage-class>   # omit to use the cluster's default StorageClass
+    deleteClaim: false
 ---
 kind: KafkaNodePool
 apiVersion: kafka.strimzi.io/v1
@@ -54,4 +37,7 @@ spec:
     - controller
     - broker
   storage:
-    type: ephemeral
+    type: persistent-claim
+    size: 10Gi
+    # class: <storage-class>   # omit to use the cluster's default StorageClass
+    deleteClaim: false
