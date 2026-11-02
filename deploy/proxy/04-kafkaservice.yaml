@@ -6,12 +6,10 @@
 # Red Hat proxy operator supports.
 #
 # WATCH SCOPE (verified live): the Red Hat operator (amq-streams-proxy
-# v3.2.2-4, based on a kroxylicious release older than 0.23.0) does NOT
-# resolve cross-namespace `strimziKafkaRef` referents — it looks up the
-# Strimzi Kafka (and its CA) in the KafkaService's own namespace only and
-# reports `ResolvedRefs=False: referenced Kafka resource not found`.
-# Cross-namespace strimziKafkaRef was added in kroxylicious 0.23.0; the
-# upstream release used previously (0.25.1) resolved it fine.
+# v3.2.2-4) does NOT resolve cross-namespace `strimziKafkaRef` referents —
+# it looks up the Strimzi Kafka (and its CA) in the KafkaService's own
+# namespace only and reports `ResolvedRefs=False: referenced Kafka resource
+# not found`.
 #
 # One KafkaService per backend cluster; both live in the proxy namespace.
 ---

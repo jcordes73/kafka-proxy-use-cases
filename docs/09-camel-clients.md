@@ -1,6 +1,6 @@
 # Step 9: Deploy Camel Producer and Consumer Clients (kafka-producer and kafka-consumer namespaces)
 
-> [↑ Setup overview](../openshift-setup.md) · prev: [Step 8: Console](08-console.md) · next: [Step 10: Custom filter](10-custom-filter.md)
+> [↑ Setup overview](../openshift-setup.md) · prev: [Step 8: Console](08-console.md) · next: [Step 11: Demo scenarios](11-demos.md)
 
 To complete the picture, deploy two **Camel Quarkus** integrations — a Kafka **producer** route (timer-driven) in a `kafka-producer` namespace and a Kafka **consumer** route in a `kafka-consumer` namespace — each in its own namespace for logical separation, connecting to the **proxy's virtual cluster** like any other client and never directly to the brokers.
 

@@ -1,6 +1,6 @@
 # Demo 12: Schema evolution
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 11: Record Encryption at rest](11-record-encryption.md) · next: [Demo 13: Custom filter](13-custom-filter.md)
+> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 11: Record Encryption at rest](11-record-encryption.md) · next: [Demo 14: Disaster recovery](14-disaster-recovery.md)
 
 Extends Demo 2:
 

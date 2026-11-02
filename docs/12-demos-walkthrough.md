@@ -2,7 +2,7 @@
 
 > [↑ Setup overview](../openshift-setup.md) · prev: [Step 11: Demo scenarios](11-demos.md)
 
-The [Demo scenarios](11-demos.md) index holds the 14 scenarios as standalone documents under [`docs/demos/`](demos). This document strings them into **one presentation** — a single arc from "one door" to "brokers can't read the data", in an order that builds, with talking points, rough timing, and the revert between acts. Per-demo detail, prerequisites, and gotchas stay in each demo's document; each section below links back to it.
+The [Demo scenarios](11-demos.md) index holds the 13 scenarios as standalone documents under [`docs/demos/`](demos). This document strings them into **one presentation** — a single arc from "one door" to "brokers can't read the data", in an order that builds, with talking points, rough timing, and the revert between acts. Per-demo detail, prerequisites, and gotchas stay in each demo's document; each section below links back to it. Demo numbers throughout refer to the **original demo numbers** (the document file names), not the renumbered tables.
 
 All commands run from the **repository root** (as in the demo scenarios doc), from a machine that resolves in-cluster DNS for the Keycloak/proxy services.
 
@@ -15,13 +15,13 @@ All commands run from the **repository root** (as in the demo scenarios doc), fr
 | 3 — Move without touching clients | [3, 10, 14](#act-3--move-without-touching-clients-demos-3-10-14) | mirror, cutover, failover, DR — clients ride through on the same bootstrap | 10 min |
 | 4 — Enforcement at the edge | [6, 7, 8](#act-4--enforcement-at-the-edge-demos-6-7-8) | authorization, isolation, and token checks **before** the brokers | 10 min |
 | 5 — The finale | [11](#act-5--the-finale-encryption-at-rest-demo-11) | Record Encryption at rest — the brokers hold ciphertext | 10 min |
-| Coda (optional) | [9, 13](#coda--optional-extensions-demos-9-13) | multi-tenant virtual clusters, custom filters | 10 min |
+| Coda (optional) | [9](#coda--optional-extensions-demo-9) | multi-tenant virtual clusters | 10 min |
 
 **Total: 45–60 minutes** with the optional coda. Acts 1, 2, and 5 alone make a tight 30-minute version.
 
 ## Act 0 — Before you present
 
-The stack must be fully deployed ([steps 1–11](../openshift-setup.md) — components table in the [Guide map](../openshift-setup.md#guide-map)). Five minutes of prep saves every act:
+The stack must be fully deployed ([steps 1–9](../openshift-setup.md#guide-map) — components table in the [Guide map](../openshift-setup.md#guide-map)). Five minutes of prep saves every act:
 
 ```bash
 # 1. Environment (cluster domain for the Keycloak admin route)
@@ -126,7 +126,7 @@ echo 'this is not json' | oc run kcat-invalid --rm -i --restart=Never \
 # % Delivery failed ... Broker failed to validate record
 ```
 
-> ⚠️ **A malformed filter crash-loops the proxy** (unknown config fields in 0.25.1 → `CrashLoopBackOff` until corrected). Two verified gotchas in the [Demo 2 notes](demos/02-record-validation.md): `allowNulls`/`allowEmpty` sit inside the rule definition, and the guide's `wireFormatVersion` does not exist in 0.25.1 — use the ready-made manifest. This is also the demo to rehearse most thoroughly.
+> ⚠️ **A malformed filter crash-loops the proxy** (unknown config fields → `CrashLoopBackOff` until corrected). Two verified gotchas in the [Demo 2 notes](demos/02-record-validation.md): `allowNulls`/`allowEmpty` sit inside the rule definition, and the guide's `wireFormatVersion` does not exist in the deployed proxy — use the ready-made manifest. This is also the demo to rehearse most thoroughly.
 
 > Talking point while the proxy reconfigures: no client was restarted, no broker was touched — a filter was attached to a virtual cluster's data path.
 
@@ -194,21 +194,17 @@ The same machinery, framed as DR: "lose" the source (`oc scale kafka kafka-clust
 oc apply -f deploy/demos/07-entity-isolation.yaml
 ```
 
-Two consumers through the proxy with the **same** group name but different OAuth clients (`demo-client`, `camel-producer` tokens) — on the brokers the groups materialize as `<principal>-demo-consumer-group`, two distinct groups. Neither consumer sees or interferes with the other's offsets. **Revert.**
+Two consumers through the proxy with the **same** group name but different OAuth clients (`demo-client`, `camel-producer` tokens) — on the brokers the groups materialize as `<sub-UUID>_demo-consumer-group`, two distinct groups with independent offsets (verified live). The `separator` in the manifest must be `_` — the principal is the JWT `sub` UUID, so `-` fails every request and `~` is rejected at startup. Neither consumer sees or interferes with the other's offsets. **Revert.**
 
-> Framing: a shared cluster without tenant coordination — isolation falls out of identity. Preview caveat: `GROUP_ID` and `TRANSACTIONAL_ID` are isolated, topic names are not yet ([kroxylicious#3504](https://github.com/kroxylicious/kroxylicious/issues/3504)).
+> Framing: a shared cluster without tenant coordination — isolation falls out of identity. Preview caveat: `GROUP_ID` and `TRANSACTIONAL_ID` are isolated, topic names are not yet.
 
 ### Demo 8 — token validation on the Kafka cluster ([detail](demos/08-token-validation.md))
 
-Token validation happens **only at the Kafka cluster level**: the brokers' `oauth` listener validates each JWT against Keycloak's JWKS during the SASL/OAUTHBEARER exchange. The proxy relays the exchange unchanged (SASL Passthrough) — proxy-layer validation needs the upstream-only `OauthBearerValidation` filter, which the Red Hat operand does not ship.
+Token validation happens **only at the Kafka cluster level**: the brokers' `oauth` listener validates each JWT against Keycloak's JWKS during the SASL/OAUTHBEARER exchange. The proxy relays the exchange unchanged (SASL Passthrough) — it does not participate in validation.
 
-Allow path: a valid demo-client token authenticates and produces normally — the broker validates it against Keycloak's JWKS as part of the SASL exchange. Deny path: forge a token signed with a different key or tamper with one — the **broker** rejects it with a SASL error (e.g. `{"status":"invalid_token"}`) before any produce happens (Kafka CLI command in the [detail](demos/08-token-validation.md)). **Defense in depth, upstream build only**: on the upstream kroxylicius 0.25.1 build you can additionally validate at the proxy — invalid tokens stop before the broker sees them:
+Allow path: a valid demo-client token authenticates and produces normally — the broker validates it against Keycloak's JWKS as part of the SASL exchange. Deny path: forge a token signed with a different key or tamper with one — the **broker** rejects it with a SASL error (e.g. `{"status":"invalid_token"}`) before any produce happens (Kafka CLI command in the [detail](demos/08-token-validation.md)).
 
-```bash
-oc apply -f deploy/demos/08-token-validation-filters.yaml
-```
-
-> The demo JWKS/issuer URLs use the internal http Keycloak service; for production use the TLS route and mount its CA into the broker pods (and into the proxy pods, if the upstream build is deployed) ([Demo 8 note](demos/08-token-validation.md)).
+> The demo JWKS/issuer URLs use the internal http Keycloak service; for production use the TLS route and mount its CA into the broker pods ([Demo 8 note](demos/08-token-validation.md)).
 
 ## Act 5 — The finale: encryption at rest (Demo 11)
 
@@ -229,12 +225,11 @@ oc wait --for=condition=Accepted=True virtualkafkacluster/kafka-cluster-1 -n kaf
 
 > ⚠️ Vault runs in **dev mode** (in-memory, fixed root token) — DEV ONLY. Say it out loud in the demo: production is a real Vault with the Transit engine, a least-privilege periodic token, and TLS.
 
-## Coda — optional extensions (Demos 9, 13)
+## Coda — optional extensions (Demo 9)
 
-If time allows, two short closers that widen the story:
+If time allows, one short closer that widens the story:
 
 - **Demo 9 — multi-tenant virtual clusters** ([detail](demos/09-multi-tenant-virtual-clusters.md)): the stack already exposes two virtual clusters; the demo adds a third over the *same* physical backend (`shared-cluster-1`) — logical clusters decoupled from physical ones, each with its own `filterRefs`. Revert: `oc delete virtualkafkacluster/shared-cluster-1 -n kafka-proxy`.
-- **Demo 13 — custom filter** ([detail](demos/13-custom-filter.md)): the full extension story — generate, build in-cluster, wire, and show a custom transformation in the data path ([Step 10](10-custom-filter.md)).
 
 ## Closing — read it off the dashboards
 
@@ -244,7 +239,7 @@ End where Act 1 started: the user-workload monitoring dashboards ([Step 1](01-us
 
 ## Revert checklist
 
-Run top-to-bottom to return the stack to its deployed baseline (the state after [steps 1–11](../openshift-setup.md)):
+Run top-to-bottom to return the stack to its deployed baseline (the state after [steps 1–9](../openshift-setup.md#guide-map)):
 
 ```bash
 # Virtual cluster + filter wiring (Acts 2, 4, 5)

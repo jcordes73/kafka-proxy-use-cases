@@ -1,7 +1,6 @@
 # deploy/proxy/00-proxy-operator-olm.yaml — Step 6.1 (docs/06-proxy.md)
 # Streams for Apache Kafka Proxy operator, installed via OperatorHub/OLM
-# (the officially supported Red Hat downstream build). The alternative
-# upstream-release install path is described in docs/06-proxy.md (Step 6.1).
+# (the officially supported Red Hat downstream build).
 #
 # NOTE (verified live): this operator supports ONLY the AllNamespaces
 # InstallMode — OwnNamespace/SingleNamespace/MultiNamespace are unsupported

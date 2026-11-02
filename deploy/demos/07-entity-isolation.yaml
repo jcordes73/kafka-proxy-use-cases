@@ -3,11 +3,16 @@
 # private namespace for consumer groups and transactional IDs within the shared
 # cluster. Two principals using the SAME group name see two distinct groups on
 # the brokers — the filter maps names transparently
-# (cluster-visible name = <principal>-<client-visible-name>).
+# (cluster-visible name = <principal>_<client-visible-name>; the principal is
+# the JWT `sub` UUID from SaslInspection).
 #
 # Requires the authenticated subject: SaslInspection first in the chain.
 # EntityIsolation supports GROUP_ID and TRANSACTIONAL_ID only (topic name
-# isolation is not yet supported — kroxylicious#3504).
+# isolation is not yet supported).
+#
+# ⚠️ separator is `_` (verified live): `-` collides with the JWT `sub` UUID
+# (every request fails with "Principal ... is unacceptable as it contains the
+# mapping separator '-'"), and `~` is rejected at proxy startup.
 #
 # Apply this file: it REPLACES the kafka-cluster-1 VirtualKafkaCluster from
 # deploy/proxy/05-virtualkafkacluster.yaml. Revert with:
@@ -38,7 +43,13 @@ spec:
     mapper: PrincipalEntityNameMapperService
     mapperConfig:
       # cluster-visible name = <principal><separator><client-visible-name>
-      separator: "-"
+      # ⚠️ verified live: the SaslInspection-derived principal is the JWT `sub`
+      # UUID — which contains `-` — so the separator must be a character that
+      # cannot appear in a UUID (e.g. `_`). With `-` every request fails with
+      # "Principal ... is unacceptable as it contains the mapping separator '-'";
+      # with `~` the proxy rejects the filter at startup ("'~' is an
+      # unacceptable separator" — the mapper validates the character).
+      separator: "_"
       principalType: io.kroxylicious.proxy.authentication.User
 ---
 apiVersion: kroxylicious.io/v1alpha1

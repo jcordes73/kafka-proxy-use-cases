@@ -134,7 +134,6 @@ oc apply -f deploy/proxy/00-proxy-operator-olm.yaml
 oc get installplan -n openshift-operators
 oc patch installplan <name> -n openshift-operators --type merge -p '{"spec":{"approved":true}}'
 oc get csv -n openshift-operators | grep amq-streams-proxy   # Succeeded
-# (upstream alternative: kroxylicious 0.25.1 release, Step 6.1)
 # Server certificate for the TLS clusterIP ingresses (Step 6.8) — BEFORE the virtual
 # clusters; a wildcard SAN covers both clusters' bootstrap/broker addresses:
 openssl req -new -newkey rsa:2048 -nodes \
@@ -157,13 +156,8 @@ print(json.dumps(d))' | oc apply -f -
 done
 oc apply -f deploy/proxy/02-kafkaproxy.yaml -f deploy/proxy/03-kafkaproxyingress.yaml \
   -f deploy/proxy/04-kafkaservice.yaml -f deploy/proxy/05-virtualkafkacluster.yaml
-# ACLs + OAuth validation filter — MUST go through envsubst: the oauth-validation filter's
-# expectedIssuer embeds ${OPENSHIFT_APPS_DOMAIN}, and the operator's ${configmap:...}
-# interpolation does not resolve it. Blanket envsubst is safe — ${configmap:...} is not a
-# valid shell variable name and is left untouched (verified live; without it every SASL
-# auth fails with "SASL failed : {\"status\":\"invalid_token\"}").
-source deploy/env.sh
-envsubst < deploy/proxy/06-kafka-acl.yaml | oc apply -f -
+# ACLs + filters — apply after the proxy CRs:
+#   oc apply -f deploy/proxy/06-kafka-acl.yaml
 # The record-validation filter the virtual clusters reference (Demo 2 manifest) — needs the
 # schema contentId registered in Step 5.4 (1 on a strictly-in-order fresh run; use the
 # contentId returned by the registration if you registered anything else first):
@@ -286,7 +280,7 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/kafka/00-cluster-operator-olm.yaml` | `kafka` |
 | `deploy/keycloak/00-namespace.yaml` | `kafka-auth` |
 | `deploy/keycloak/01-kafka-auth-operator.yaml` | (OperatorGroup + Subscription for the `kafka-auth` namespace created above) |
-| `deploy/proxy/00-proxy-operator-olm.yaml` | `openshift-operators` (operator; upstream install path described in Step 6.1) |
+| `deploy/proxy/00-proxy-operator-olm.yaml` | `openshift-operators` (operator) |
 | `deploy/bridge/01-kafka-bridge.yaml` | `kafka-http-bridge` |
 | `deploy/bridge/02-bridge-netpol-dmz.yaml` | `api-gateway` (stand-in for the DMZ verification) |
 | `deploy/mirrormaker2/00-namespace.yaml` | `kafka-mm2` |
@@ -294,11 +288,9 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/console/01-console-operator.yaml` | `kafka-console` |
 | `deploy/camel/producer/00-buildconfig.yaml` | `kafka-producer` |
 | `deploy/camel/consumer/00-buildconfig.yaml` | `kafka-consumer` |
-| `deploy/custom-filter/01-buildconfig.yaml` | `kafka-filter-dev` |
 | `deploy/apicurio/01-subscription.yaml` | `kafka-registry` |
 | `demos/06-authorization-filters.yaml` | `kafka-proxy` (replaces the `kafka-cluster-1` VirtualKafkaCluster wiring) |
 | `demos/07-entity-isolation.yaml` | `kafka-proxy` (replaces the `kafka-cluster-1` VirtualKafkaCluster wiring) |
-| `demos/08-token-validation-filters.yaml` | `kafka-proxy` (replaces the `kafka-cluster-1` VirtualKafkaCluster wiring) |
 | `demos/09-multi-tenant-virtual-clusters.yaml` | `kafka-proxy` |
 | `demos/10-mm2-failover.yaml` | `kafka-mm2` (replaces the running KafkaMirrorMaker2) |
 | `demos/11-record-encryption.yaml` | `kafka-vault` + `kafka-proxy` |
@@ -316,8 +308,7 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [9](../docs/09-camel-clients.md) |
 | `deploy/observability/01–05` | Per-component monitoring integration: metrics netpols, broker/proxy/bridge PodMonitors, alerts | [1.2–1.9](../docs/01-user-workload-monitoring.md) |
 | `deploy/observability/06–07-perses*.yaml` + `09-perses-strimzi-dashboards.yaml` | Perses console dashboards (optional, Tech Preview): COO subscription + monitoring `UIPlugin`, `PersesDatasource` (UWM Thanos Querier) + `cluster-monitoring-view` RBAC, and the full Strimzi Grafana dashboard set translated to `PersesDashboard`s (kafka project) | [1.10](../docs/01-user-workload-monitoring.md#110--perses-dashboards-in-the-console-optional-technology-preview) |
-| `deploy/custom-filter/` | Custom filter plugin: Dockerfile + image build + `KafkaProtocolFilter` (requires the local Maven filter project from [Step 10.1](../docs/10-custom-filter.md#101--generate-and-test-a-filter-project)) | [10](../docs/10-custom-filter.md) |
-| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`; its filter deploys with the proxy), proxy filters (authorization, entity isolation, token validation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
+| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`; its filter deploys with the proxy), proxy filters (authorization, entity isolation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
 
 ## Templating: `OPENSHIFT_APPS_DOMAIN`
 
@@ -333,7 +324,7 @@ source deploy/env.sh
 envsubst < deploy/keycloak/04-kafka-realm-import.yaml | oc apply -f -   # console redirect URI
 envsubst < deploy/kafka/02-kafka.yaml | oc apply -f -                   # Kafka listener hostname
 envsubst < deploy/apicurio/03-registry.yaml | oc apply -f -             # registry Routes + Keycloak auth
-envsubst < deploy/proxy/06-kafka-acl.yaml | oc apply -f -               # oauth-validation expectedIssuer
+envsubst < deploy/proxy/06-kafka-acl.yaml | oc apply -f -               # ACLs + filters (safe — envsubst leaves the ${configmap:...} ref untouched)
 envsubst < deploy/console/02-kafka-console.yaml | oc apply -f -  # console hostname + OIDC
 ```
 
@@ -342,9 +333,7 @@ Files without `${OPENSHIFT_APPS_DOMAIN}` can be applied directly with
 Strimzi config-provider references or the proxy's `${configmap:...}`
 interpolation ref — untouched: they are not valid shell variable names, so
 blanket `envsubst` is safe even on files that mix both, like
-`deploy/proxy/06-kafka-acl.yaml`. Applying that file **raw** leaves the domain
-literal in the filter's `expectedIssuer` and every SASL auth fails with
-`SASL failed : {"status":"invalid_token"}` — verified live.)
+`deploy/proxy/06-kafka-acl.yaml`.)
 
 `deploy/demos/02-record-validation-demo.yaml` additionally uses
 `${APICURIO_CONTENT_ID}` — the schema's `contentId` from the registry, obtained

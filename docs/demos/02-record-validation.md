@@ -16,7 +16,7 @@ oc -n kafka-proxy patch virtualkafkacluster kafka-cluster-1 --type=merge \
 oc -n kafka-proxy rollout status deploy/simple --timeout=180s   # proxy reconfigures
 ```
 
-> ⚠️ **Config shape matters — a malformed filter crash-loops the proxy.** The deployed upstream 0.25.1 proxy rejects unknown filter config fields at startup (the pod enters `CrashLoopBackOff` until the `KafkaProtocolFilter` is corrected). Two gotchas verified live: `allowNulls`/`allowEmpty` belong inside the rule definition, and the `wireFormatVersion` option shown in the Red Hat 3.2 guide does not exist in 0.25.1 — omit it.
+> ⚠️ **Config shape matters — a malformed filter crash-loops the proxy.** The deployed proxy rejects unknown filter config fields at startup (the pod enters `CrashLoopBackOff` until the `KafkaProtocolFilter` is corrected). Two gotchas verified live: `allowNulls`/`allowEmpty` belong inside the rule definition, and the `wireFormatVersion` option shown in the Red Hat 3.2 guide does not exist in the deployed proxy — omit it.
 
 Produce through the proxy with `kcat` — a conforming record is delivered, a non-conforming one is rejected before the broker:
 
@@ -36,4 +36,4 @@ echo 'this is not json' | oc run kcat-invalid --rm -i --restart=Never \
 
 Watch `kroxylicious_client_to_proxy_request_total` vs `kroxylicious_proxy_to_server_request_total` in user-workload monitoring — the rejected produce never reaches the upstream (downstream count permanently ahead).
 
-> **To disable validation:** remove the `filterRefs` entry (`oc -n kafka-proxy patch virtualkafkacluster kafka-cluster-1 --type=json --path=/spec/filterRefs --value=[]` and re-apply [`deploy/proxy/05-virtualkafkacluster.yaml`](../../deploy/proxy/05-virtualkafkacluster.yaml) to restore the manifest state), and optionally delete the `KafkaProtocolFilter`. Note the 0.25.1 proxy exports no Record Validation–specific metrics — rejections are only visible client-side and in the proxy logs.
+> **To disable validation:** remove the `filterRefs` entry (`oc -n kafka-proxy patch virtualkafkacluster kafka-cluster-1 --type=json --path=/spec/filterRefs --value=[]` and re-apply [`deploy/proxy/05-virtualkafkacluster.yaml`](../../deploy/proxy/05-virtualkafkacluster.yaml) to restore the manifest state), and optionally delete the `KafkaProtocolFilter`. Note the proxy exports no Record Validation–specific metrics — rejections are only visible client-side and in the proxy logs.

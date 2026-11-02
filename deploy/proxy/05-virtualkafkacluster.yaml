@@ -52,17 +52,10 @@ spec:
         certificateRef:
           name: proxy-tls
           kind: Secret
-  # ACL chain: Authorization enforces the least-privilege ACL rules
-  # (deploy/proxy/06-kafka-acl.yaml) before the brokers. NOTE: the upstream-only
-  # OauthBearerValidation filter (which used to provide the subject here) is NOT
-  # shipped in the Red Hat proxy operand and has been removed from the chain —
-  # add it back only on the upstream build (kroxylicius 0.25.1 release, Step 6.1).
   # ACL chain (same as kafka-cluster-1, without record-validation): SaslInspection
   # authenticates the client and derives the subject (JWT `sub` UUID), the
   # Authorization filter enforces the least-privilege ACL rules
-  # (deploy/proxy/06-kafka-acl.yaml) before the brokers. The upstream-only
-  # OauthBearerValidation filter is NOT shipped in the Red Hat proxy operand —
-  # add it back only on the upstream build (kroxylicius 0.25.1 release, Step 6.1).
+  # (deploy/proxy/06-kafka-acl.yaml) before the brokers.
   filterRefs:
     - name: sasl-inspection
     - name: kafka-authorization

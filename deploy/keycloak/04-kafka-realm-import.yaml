@@ -187,11 +187,9 @@ spec:
         realmRoles:
           - sr-admin
           # default-roles-kafka is REQUIRED: it brings the `account` client
-          # roles that put `aud: account` in the token — the proxy's
-          # OauthBearerValidation expects expectedAudience: account, and
-          # without the default roles the token has NO aud claim and every
-          # proxy connection fails ("No Audience (aud) claim present",
-          # verified live). Assigned via the admin API live too.
+          # roles that put `aud: account` in the token — broker-side JWT
+          # validation rejects tokens with no aud claim ("No Audience (aud)
+          # claim present", verified live). Assigned via the admin API live too.
           - default-roles-kafka
       # NOTE: do NOT declare `service-account-registry-api` here — Keycloak
       # auto-creates the service-account user when the client's

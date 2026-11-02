@@ -1,6 +1,6 @@
 # Demo 14: Disaster recovery active/passive
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 13: Custom filter](13-custom-filter.md) · next: [End-to-end demo walkthrough](../12-demos-walkthrough.md)
+> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 12: Schema evolution](12-schema-evolution.md) · next: [End-to-end demo walkthrough](../12-demos-walkthrough.md)
 
 cluster-2 as the passive replica:
 
