@@ -59,18 +59,34 @@ spec:
           # create Kubernetes Secrets) — the KEY must be the full Kafka
           # property name (valuesFrom maps every key as a property):
           #   oc create secret generic kafka-console-kafka-oauth \
-          #     --from-literal=sasl.oauthbearer.client.credentials.client.secret=kafka-console-kafka-secret \
+          #     --from-literal=sasl.jaas.config="org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId=\"kafka-console-kafka\" clientSecret=\"kafka-console-kafka-secret\";" \
           #     -n kafka-console
           - name: sasl.mechanism
             value: OAUTHBEARER
+          # Kafka 4.x verified live: the client-side OAuthBearerLoginCallbackHandler
+          # reads clientId/clientSecret from the JAAS options ONLY — the flat
+          # sasl.oauthbearer.client.credentials.client.id/secret properties are
+          # ignored ("The OAuth configuration option clientId value must be
+          # non-null"), and the console's AdminClient then retries connections
+          # silently until "Timed out waiting for a node assignment" (HTTP 504
+          # on /api/kafkas). The credentials must be in sasl.jaas.config, and
+          # the JVM needs -Dorg.apache.kafka.sasl.oauthbearer.allowed.urls for
+          # the token endpoint (the operator sets JAVA_TOOL_OPTIONS for the
+          # console deployment automatically).
           - name: sasl.jaas.config
-            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+            value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId=\"kafka-console-kafka\" clientSecret=\"kafka-console-kafka-secret\";"
           - name: sasl.login.callback.handler.class
             value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
-          - name: sasl.oauthbearer.client.credentials.client.id
-            value: kafka-console-kafka
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+          # Verified live: WITHOUT security.protocol the Kafka client defaults
+          # to PLAINTEXT and the proxy's TLS-only virtual-cluster ingress
+          # (9292) rejects the plaintext ClientHello — connections fail
+          # silently and every Admin call ends in "Timed out waiting for a
+          # node assignment" (HTTP 504 on /api/kafkas). The physical-cluster
+          # entries set SASL_SSL; the virtual clusters need it too.
+          - name: security.protocol
+            value: SASL_SSL
         # The virtual cluster ingress speaks TLS (guide Step 6.4): client props
         # from the console-kafka-tls ConfigMap (Step 8.2) — every key becomes
         # a Kafka client property, including the proxy CA as a PEM trust store.
@@ -121,14 +137,20 @@ spec:
             value: kafka-cluster-2-cluster-ip-2-bootstrap.kafka-proxy.svc.cluster.local:9292
           - name: sasl.mechanism
             value: OAUTHBEARER
+          # Kafka 4.x verified live: clientId/clientSecret must be in the JAAS
+          # config (see the cluster-1 virtual cluster comment) — flat properties
+          # are ignored.
           - name: sasl.jaas.config
-            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+            value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId=\"kafka-console-kafka\" clientSecret=\"kafka-console-kafka-secret\";"
           - name: sasl.login.callback.handler.class
             value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
-          - name: sasl.oauthbearer.client.credentials.client.id
-            value: kafka-console-kafka
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
+          # Same fix as cluster-1: security.protocol=SASL_SSL is required —
+          # without it the client defaults to PLAINTEXT against the TLS-only
+          # virtual-cluster ingress.
+          - name: security.protocol
+            value: SASL_SSL
         valuesFrom:
           - secretRef:
               name: kafka-console-kafka-oauth
@@ -177,12 +199,13 @@ spec:
             value: kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093
           - name: sasl.mechanism
             value: OAUTHBEARER
+          # Kafka 4.x verified live: clientId/clientSecret must be in the JAAS
+          # config (see the cluster-1 virtual cluster comment) — flat properties
+          # are ignored.
           - name: sasl.jaas.config
-            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+            value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId=\"kafka-console-kafka\" clientSecret=\"kafka-console-kafka-secret\";"
           - name: sasl.login.callback.handler.class
             value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
-          - name: sasl.oauthbearer.client.credentials.client.id
-            value: kafka-console-kafka
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
         valuesFrom:
@@ -224,12 +247,13 @@ spec:
             value: kafka-cluster-2-kafka-bootstrap.kafka-cluster-2.svc.cluster.local:9093
           - name: sasl.mechanism
             value: OAUTHBEARER
+          # Kafka 4.x verified live: clientId/clientSecret must be in the JAAS
+          # config (see the cluster-1 virtual cluster comment) — flat properties
+          # are ignored.
           - name: sasl.jaas.config
-            value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
+            value: "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId=\"kafka-console-kafka\" clientSecret=\"kafka-console-kafka-secret\";"
           - name: sasl.login.callback.handler.class
             value: org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
-          - name: sasl.oauthbearer.client.credentials.client.id
-            value: kafka-console-kafka
           - name: sasl.oauthbearer.token.endpoint.url
             value: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
         valuesFrom:

@@ -1,6 +1,6 @@
 # Demo 9: Multi-tenant virtual clusters
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 8: Token validation at the proxy](08-token-validation.md) · next: [Demo 10: MM2 failover / failback](10-mm2-failover.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 8: Token validation at the proxy](08-token-validation.md) · next: [Demo 10: MM2 failover / failback](10-mm2-failover.md)
 
 One proxy, many logical clusters — each with its own bootstrap, filters, and policies:
 

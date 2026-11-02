@@ -1,0 +1,2491 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: keycloak-troubleshooting
+  namespace: kafka
+spec:
+  instanceSelector:
+    matchLabels:
+      app.kubernetes.io/instance: perses-observability-operator
+  config:
+    display:
+      name: Keycloak troubleshooting dashboard
+      description: Converted from the Keycloak Grafana dashboard (keycloak/keycloak-grafana-dashboard) to Perses. Scraped from the Red Hat build of Keycloak management port (9000, HTTPS); queries target
+        the user-workload-monitoring datasource (Thanos Querier).
+    duration: 6h
+    refreshInterval: 1m
+    variables:
+    - kind: ListVariable
+      spec:
+        name: caffeine_cache
+        allowMultiple: true
+        allowAllValue: true
+        display:
+          name: cache
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: cache
+            matchers:
+            - cache_evictions_count
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: ispn_clustered_caches
+        allowMultiple: true
+        allowAllValue: true
+        display:
+          name: cache
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: cache
+            matchers:
+            - vendor_rpc_manager_replication_count
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: ispn_local_cache
+        allowMultiple: true
+        allowAllValue: true
+        display:
+          name: cache
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: cache
+            matchers:
+            - vendor_statistics_hits
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: jdbc_cache_names
+        allowMultiple: true
+        allowAllValue: true
+        display:
+          name: cache
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: cache
+            matchers:
+            - cache_evictions_count
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: namespace
+        allowMultiple: false
+        allowAllValue: true
+        display:
+          name: namespace
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: namespace
+            matchers:
+            - up
+        customAllValue: .*
+    layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: SLO Metrics
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 0
+          width: 3
+          height: 4
+          content:
+            $ref: '#/spec/panels/0'
+        - x: 3
+          y: 0
+          width: 3
+          height: 4
+          content:
+            $ref: '#/spec/panels/1'
+        - x: 6
+          y: 0
+          width: 3
+          height: 4
+          content:
+            $ref: '#/spec/panels/2'
+        - x: 0
+          y: 4
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/3'
+        - x: 6
+          y: 4
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/4'
+    - kind: Grid
+      spec:
+        display:
+          title: JVM Metrics
+          collapse:
+            open: true
+        items:
+        - x: 6
+          y: 15
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/5'
+        - x: 12
+          y: 15
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/6'
+        - x: 0
+          y: 26
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/7'
+        - x: 6
+          y: 26
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/8'
+        - x: 12
+          y: 26
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/9'
+        - x: 0
+          y: 37
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/10'
+        - x: 6
+          y: 37
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/11'
+        - x: 12
+          y: 37
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/12'
+        - x: 0
+          y: 48
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/13'
+        - x: 6
+          y: 48
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/14'
+    - kind: Grid
+      spec:
+        display:
+          title: Database Metrics
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 59
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/15'
+        - x: 6
+          y: 59
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/16'
+        - x: 12
+          y: 59
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/17'
+        - x: 0
+          y: 70
+          width: 6
+          height: 11
+          content:
+            $ref: '#/spec/panels/18'
+    - kind: Grid
+      spec:
+        display:
+          title: HTTP Metrics
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 81
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/19'
+        - x: 6
+          y: 81
+          width: 12
+          height: 10
+          content:
+            $ref: '#/spec/panels/20'
+        - x: 6
+          y: 91
+          width: 12
+          height: 10
+          content:
+            $ref: '#/spec/panels/21'
+        - x: 0
+          y: 102
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/22'
+        - x: 6
+          y: 102
+          width: 12
+          height: 10
+          content:
+            $ref: '#/spec/panels/23'
+        - x: 0
+          y: 112
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/24'
+        - x: 6
+          y: 112
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/25'
+        - x: 12
+          y: 112
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/26'
+        - x: 0
+          y: 123
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/27'
+    - kind: Grid
+      spec:
+        display:
+          title: Cluster Metrics
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 133
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/28'
+        - x: 6
+          y: 133
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/29'
+        - x: 12
+          y: 133
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/30'
+        - x: 0
+          y: 143
+          width: 6
+          height: 9
+          content:
+            $ref: '#/spec/panels/31'
+        - x: 6
+          y: 143
+          width: 6
+          height: 9
+          content:
+            $ref: '#/spec/panels/32'
+        - x: 12
+          y: 143
+          width: 6
+          height: 9
+          content:
+            $ref: '#/spec/panels/33'
+    - kind: Grid
+      spec:
+        display:
+          title: Database caching - $jdbc_cache_names
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 152
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/34'
+        - x: 6
+          y: 152
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/35'
+        - x: 12
+          y: 152
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/36'
+        - x: 0
+          y: 163
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/37'
+        - x: 6
+          y: 163
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/38'
+        - x: 12
+          y: 163
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/39'
+        - x: 0
+          y: 173
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/40'
+        - x: 6
+          y: 173
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/41'
+        - x: 12
+          y: 173
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/42'
+        - x: 0
+          y: 184
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/43'
+        - x: 6
+          y: 184
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/44'
+        - x: 12
+          y: 184
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/45'
+    - kind: Grid
+      spec:
+        display:
+          title: Local caching - $caffeine_cache
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 194
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/46'
+        - x: 6
+          y: 194
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/47'
+        - x: 12
+          y: 194
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/48'
+        - x: 0
+          y: 204
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/49'
+    - kind: Grid
+      spec:
+        display:
+          title: Local caching - $ispn_local_cache
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 214
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/50'
+        - x: 6
+          y: 214
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/51'
+        - x: 12
+          y: 214
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/52'
+        - x: 0
+          y: 224
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/53'
+    - kind: Grid
+      spec:
+        display:
+          title: Clustered caching - $ispn_clustered_caches
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 234
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/54'
+        - x: 6
+          y: 234
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/55'
+        - x: 12
+          y: 234
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/56'
+        - x: 0
+          y: 283
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/57'
+        - x: 6
+          y: 283
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/58'
+        - x: 12
+          y: 283
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/59'
+        - x: 0
+          y: 293
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/60'
+        - x: 6
+          y: 293
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/61'
+        - x: 0
+          y: 303
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/62'
+        - x: 6
+          y: 303
+          width: 6
+          height: 10
+          content:
+            $ref: '#/spec/panels/63'
+    panels:
+      '0':
+        kind: Panel
+        spec:
+          display:
+            name: Availability
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: percent-decimal
+              thresholds:
+                steps:
+                - color: '#f2495c'
+                  value: 0
+                - color: '#73bf69'
+                  value: 99.9
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: count_over_time( sum (up{ container="keycloak", namespace=~"$namespace" } > 0)[6h:5m] ) / count_over_time(vector(1)[6h:5m])
+      '1':
+        kind: Panel
+        spec:
+          display:
+            name: Responses below 250ms
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: percent-decimal
+              thresholds:
+                steps:
+                - color: '#f2495c'
+                  value: 0
+                - color: '#73bf69'
+                  value: 0.95
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum( rate( http_server_requests_seconds_bucket{ uri=~"/realms/{realm}/protocol/{protocol}/.*|/realms/{realm}/login-actions/.*", le="0.25", container="keycloak", namespace=~"$namespace"}
+                    [6h] ) ) without (le,uri,status,outcome,method,pod,instance) / sum( rate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}/.*|/realms/{realm}/login-actions/.*",
+                    container="keycloak", namespace=~"$namespace"} [6h] ) ) without (le,uri,status,outcome,method,pod,instance)
+      '2':
+        kind: Panel
+        spec:
+          display:
+            name: Error responses
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: percent-decimal
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+                - color: '#f2495c'
+                  value: 0.001
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum( rate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions.*", outcome="SERVER_ERROR", container="keycloak", namespace=~"$namespace"}
+                    [6h] ) ) or vector(0) / sum( rate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions.*", container="keycloak", namespace=~"$namespace"}
+                    [6h] ) )
+      '3':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in % of responses below 250ms
+            description: This Prometheus query calculates the percentage of authentication requests that completed within 0.25 seconds relative to all authentication requests for specific Keycloak endpoints,
+              targeting a parti
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum( irate( http_server_requests_seconds_bucket{ uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions.*", le="0.25", container="keycloak", namespace=~"$namespace"}
+                    [5m] ) ) without (le,uri,status,outcome,method,instance) / sum( irate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions.*",
+                    container="keycloak", namespace=~"$namespace"} [5m] ) ) without (le,uri,status,outcome,method,instance)
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum( irate( http_server_requests_seconds_bucket{ uri=~"/realms/{realm}/protocol/{protocol}/.*|/realms/{realm}/login-actions/.*", le="0.25", container="keycloak", namespace=~"$namespace"}
+                    [5m] ) ) without (le,uri,status,outcome,method,pod,instance) / sum( irate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}/.*|/realms/{realm}/login-actions/.*",
+                    container="keycloak", namespace=~"$namespace"} [5m] ) ) without (le,uri,status,outcome,method,pod,instance)
+                  seriesNameFormat: All pods
+      '4':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in % of Error responses
+            description: This Prometheus query calculates the percentage of authentication requests that returned a server side error for all authentication requests, targeting a particular namespace, over
+              the past 5 minutes.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(uri) ( rate( http_server_requests_seconds_count{ outcome="SERVER_ERROR", uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions/.*", container="keycloak",
+                    namespace=~"$namespace"} [5m] ) ) / sum by (uri) ( rate( http_server_requests_seconds_count{ uri=~"/realms/{realm}/protocol/{protocol}.*|/realms/{realm}/login-actions/.*", container="keycloak",
+                    namespace=~"$namespace"} [5m] ) )
+      '5':
+        kind: Panel
+        spec:
+          display:
+            name: KUBERNETES - CPU Usage percentage
+            description: This is available only in Kubernetes and only if your pods have cpu limits set
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum(rate(container_cpu_usage_seconds_total{container="keycloak", namespace=~"$namespace"}[5m])) by (pod) / on(pod) group_left sum(kube_pod_container_resource_limits{container="keycloak",
+                    namespace=~"$namespace", resource="cpu"}) by (pod)
+      '6':
+        kind: Panel
+        spec:
+          display:
+            name: Average memory usage
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: bytes
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum_over_time((sum by (pod) (jvm_memory_used_bytes{namespace=~"$namespace"}))[6h:5m]) / count_over_time((sum by (pod) (jvm_memory_used_bytes{namespace=~"$namespace"}))[6h:5m])
+      '7':
+        kind: Panel
+        spec:
+          display:
+            name: JVM memory used vs committed
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (jvm_memory_used_bytes{namespace=~"$namespace"})
+                  seriesNameFormat: '{{pod}} - used'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (jvm_memory_committed_bytes{namespace=~"$namespace"})
+                  seriesNameFormat: '{{pod}} - committed'
+      '8':
+        kind: Panel
+        spec:
+          display:
+            name: Average GC time
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: seconds
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum( rate( jvm_gc_pause_seconds_sum{ container="keycloak", namespace=~"$namespace"} [6h] ) ) without (action,instance,cause) / sum( rate( jvm_gc_pause_seconds_count{ container="keycloak",
+                    namespace=~"$namespace"} [6h] ) ) without (action,instance,cause)
+                  seriesNameFormat: '{{pod}} - {{gc}}'
+      '9':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in average GC times in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod,cause)(irate(jvm_gc_pause_seconds_sum{container="keycloak", namespace=~"$namespace"}[5m]))
+                  seriesNameFormat: '{{pod}} - {{cause}}'
+      '10':
+        kind: Panel
+        spec:
+          display:
+            name: Number of GC events in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod,cause)(irate(jvm_gc_pause_seconds_count{container="keycloak", namespace=~"$namespace"}[5m]))
+                  seriesNameFormat: '{{pod}} - {{cause}}'
+      '11':
+        kind: Panel
+        spec:
+          display:
+            name: Maximum GC time and cause
+            description: I am not sure about this metric. I would expect _max to be only increasing number while here it is going up and down so I am not sure what this really means
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: max by (pod,cause) (jvm_gc_pause_seconds_max{container="keycloak", namespace=~"$namespace"})
+                  seriesNameFormat: '{{pod}} - {{cause}}'
+      '12':
+        kind: Panel
+        spec:
+          display:
+            name: JVM GC CPU overhead %
+            description: The percentage of CPU time spent on garbage collection, indicating the impact of GC on application performance in the JVM. It refers to the proportion of the total CPU processing
+              time that is dedicate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (jvm_gc_overhead{container="keycloak", namespace=~"$namespace"})
+                  seriesNameFormat: '{{pod}}'
+      '13':
+        kind: Panel
+        spec:
+          display:
+            name: JVM waiting threads
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(jvm_threads_states_threads{namespace=~"$namespace", container="keycloak", state="waiting"})
+                  seriesNameFormat: '{{pod}}'
+      '14':
+        kind: Panel
+        spec:
+          display:
+            name: JVM CPU Usage
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: process_cpu_usage{namespace=~"$namespace", container="keycloak"}
+                  seriesNameFormat: '{{pod}}'
+      '15':
+        kind: Panel
+        spec:
+          display:
+            name: Connection pool utilization %
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: percent-decimal
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+                - color: '#f2495c'
+                  value: 80
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: avg by (pod) (sum_over_time(agroal_active_count{namespace=~"$namespace"}[6h:5m]) / sum_over_time((agroal_active_count{namespace=~"$namespace"} + agroal_available_count{namespace=~"$namespace"})[6h:5m]))
+      '16':
+        kind: Panel
+        spec:
+          display:
+            name: Threads waiting for database connection
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: agroal_awaiting_count{container="keycloak", namespace=~"$namespace"}
+                  seriesNameFormat: '{{pod}}'
+      '17':
+        kind: Panel
+        spec:
+          display:
+            name: Database connections pool
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: agroal_available_count{job=~"${namespace}/keycloak-metrics|keycloak-service",namespace="${namespace}"}
+                  seriesNameFormat: '{{pod}} - available connections'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: agroal_active_count{job=~"${namespace}/keycloak-metrics|keycloak-service",namespace="${namespace}"}
+                  seriesNameFormat: '{{pod}} - used connections'
+      '18':
+        kind: Panel
+        spec:
+          display:
+            name: Number of acquired connections in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(irate(agroal_acquire_count_total{container="keycloak", namespace=~"$namespace"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '19':
+        kind: Panel
+        spec:
+          display:
+            name: Number of requests in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) ( irate( http_server_requests_seconds_count{ container="keycloak", namespace=~"$namespace"} [5m] ) )
+      '20':
+        kind: Panel
+        spec:
+          display:
+            name: Total number of requests per URI and outcome
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (uri,outcome) (http_server_requests_seconds_count{container="keycloak", namespace=~"$namespace"})
+                  seriesNameFormat: '{{uri}} - {{outcome}}'
+      '21':
+        kind: Panel
+        spec:
+          display:
+            name: Total number of requests per URI and outcome in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (uri,outcome) (irate(http_server_requests_seconds_count{container="keycloak", namespace=~"$namespace"}[5m]))
+                  seriesNameFormat: '{{uri}} - {{outcome}}'
+      '22':
+        kind: Panel
+        spec:
+          display:
+            name: Active requests
+            description: The current number of active requests processed by each pod
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (http_server_active_requests{container="keycloak", namespace=~"$namespace"})
+                  seriesNameFormat: '{{pod}}'
+      '23':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in outcome types in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod,outcome) (irate(http_server_requests_seconds_count{container="keycloak", namespace=~"$namespace"}[5m]))
+                  seriesNameFormat: '{{pod}} - {{outcome}}'
+      '24':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in response sizes in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)( irate( http_server_bytes_written_sum{ container="keycloak", namespace=~"$namespace"} [5m] ) ) / sum by (pod)( irate( http_server_bytes_written_count{ container="keycloak",
+                    namespace=~"$namespace"} [5m] ) )
+                  seriesNameFormat: '{{pod}}'
+      '25':
+        kind: Panel
+        spec:
+          display:
+            name: Average response size
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: bytes
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)( rate( http_server_bytes_written_sum{ container="keycloak", namespace=~"$namespace"} [6h] ) ) / sum by(pod)( rate( http_server_bytes_written_count{ container="keycloak",
+                    namespace=~"$namespace"} [6h] ) )
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: http_server_bytes_written_sum{ container="keycloak", namespace=~"$namespace"}
+      '26':
+        kind: Panel
+        spec:
+          display:
+            name: Average request size
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: bytes
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)( rate( http_server_bytes_read_sum{ container="keycloak", namespace=~"$namespace"} [6h] ) ) / sum by(pod)( rate( http_server_bytes_read_count{ container="keycloak",
+                    namespace=~"$namespace"} [6h] ) )
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: http_server_bytes_written_sum{ container="keycloak", namespace=~"$namespace"}
+      '27':
+        kind: Panel
+        spec:
+          display:
+            name: Changes in request sizes in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)( irate( http_server_bytes_read_sum{ container="keycloak", namespace=~"$namespace"} [5m] ) ) / sum by (pod)( irate( http_server_bytes_read_count{ container="keycloak",
+                    namespace=~"$namespace"} [5m] ) )
+                  seriesNameFormat: '{{pod}} - requests'
+      '28':
+        kind: Panel
+        spec:
+          display:
+            name: Cluster Size
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: vendor_cluster_size{namespace=~"$namespace", container="keycloak"}
+                  seriesNameFormat: '{{node}}'
+      '29':
+        kind: Panel
+        spec:
+          display:
+            name: Response Time (99th)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: histogram_quantile(0.99, sum by(le, node, target_node) (rate(vendor_jgroups_stats_sync_requests_seconds_bucket{namespace=~"$namespace", container="keycloak"}[5m])))
+                  seriesNameFormat: '{{node}} -> {{target_node}}'
+      '30':
+        kind: Panel
+        spec:
+          display:
+            name: Average Response Time
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_jgroups_stats_sync_requests_seconds_sum{namespace=~"$namespace", container="keycloak"}[5m]) / (rate(vendor_jgroups_stats_sync_requests_seconds_count{namespace=~"$namespace",
+                    container="keycloak"}[5m]))
+                  seriesNameFormat: '{{node}} -> {{target_node}}'
+      '31':
+        kind: Panel
+        spec:
+          display:
+            name: Message Retransmissions
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_jgroups_unicast3_get_num_xmits{namespace=~"$namespace", container="keycloak"}[5m])
+                  seriesNameFormat: '{{node}}'
+      '32':
+        kind: Panel
+        spec:
+          display:
+            name: Messages Dropped
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_jgroups_red_get_dropped_messages{namespace=~"$namespace", container="keycloak"}[5m])
+                  seriesNameFormat: '{{node}}'
+      '33':
+        kind: Panel
+        spec:
+          display:
+            name: Messages
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_jgroups_tcp_get_num_msgs_sent{namespace=~"$namespace", container="keycloak"}[5m])
+                  seriesNameFormat: '{{node}} Sent'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_jgroups_tcp_get_num_msgs_received{namespace=~"$namespace", container="keycloak"}[5m]) * -1
+                  seriesNameFormat: '{{node}} Received'
+      '34':
+        kind: Panel
+        spec:
+          display:
+            name: Number of owned entries
+            description: The approximate number of entries stored by the node, excluding backup copies.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(vendor_statistics_approximate_entries_unique{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"})
+                  seriesNameFormat: '{{pod}}'
+      '35':
+        kind: Panel
+        spec:
+          display:
+            name: Number of all stored entries (including backups)
+            description: The approximate number of entries stored by the node, including backup copies.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(vendor_statistics_approximate_entries_unique{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"})
+                  seriesNameFormat: '{{pod}}'
+      '36':
+        kind: Panel
+        spec:
+          display:
+            name: Number of evictions in 5 minutes interval
+            description: Eviction is the process to limit the cache size and, when full, an entry is removed to make room for a new entry to be cached. As Keycloak caches the database entities in the users,
+              realms and authori
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(irate(vendor_statistics_evictions{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+      '37':
+        kind: Panel
+        spec:
+          display:
+            name: Number of write operations in 5 minutes interval
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(irate(vendor_statistics_store_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '38':
+        kind: Panel
+        spec:
+          display:
+            name: Read/Write ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: avg by (pod)(( irate(vendor_statistics_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) + irate(vendor_statistics_miss_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m])) / ( irate(vendor_statistics_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m])
+                    + irate(vendor_statistics_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) + irate(vendor_statistics_remove_hit_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) + irate(vendor_statistics_remove_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m])
+                    + irate(vendor_statistics_store_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) ))
+                  seriesNameFormat: '{{pod}}'
+      '39':
+        kind: Panel
+        spec:
+          display:
+            name: Average write operation time
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: seconds
+              thresholds:
+                steps:
+                - color: '#73bf69'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: avg by (pod)( rate( vendor_statistics_store_times_seconds_sum{ container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"} [6h] ) ) / sum by(pod)( rate( vendor_statistics_store_times_seconds_count{
+                    container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"} [6h] ) )
+      '40':
+        kind: Panel
+        spec:
+          display:
+            name: Number of read operations in 5 minutes interval
+            description: A read operation reads a value from the cache. It divides into two groups, a hit if a value is found, and a miss if not found.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (irate(vendor_statistics_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) + irate(vendor_statistics_miss_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+      '41':
+        kind: Panel
+        spec:
+          display:
+            name: Cache read hit/miss ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: avg by (pod)(irate(vendor_statistics_hit_times_seconds_count{container="keycloak", cache=~"$jdbc_cache_names", namespace=~"$namespace"}[5m]) / (irate(vendor_statistics_hit_times_seconds_count{cache=~"$jdbc_cache_names",
+                    namespace=~"$namespace", container="keycloak"}[5m]) + irate(vendor_statistics_miss_times_seconds_count{cache=~"$jdbc_cache_names", namespace=~"$namespace", container="keycloak"}[5m])))
+                  seriesNameFormat: '{{pod}}'
+      '42':
+        kind: Panel
+        spec:
+          display:
+            name: Number of cache read misses in 5 minute interval
+            description: A read operation reads a value from the cache. It divides into two groups, a hit if a value is found, and a miss if not found.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (irate(vendor_statistics_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '43':
+        kind: Panel
+        spec:
+          display:
+            name: Number of remove operations in 5 minutes interval
+            description: A remove operation removes a value from the cache. It divides in two groups, a hit if a value exists, and a miss if the value does not exist.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod)(irate(vendor_statistics_remove_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]) + irate(vendor_statistics_remove_miss_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+      '44':
+        kind: Panel
+        spec:
+          display:
+            name: Cache remove hit/miss ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: avg by (pod)(irate(vendor_statistics_remove_hit_times_seconds_count{container="keycloak", cache=~"$jdbc_cache_names", namespace=~"$namespace"}[5m]) / (irate(vendor_statistics_remove_hit_times_seconds_count{cache=~"$jdbc_cache_names",
+                    namespace=~"$namespace", container="keycloak"}[5m]) + irate(vendor_statistics_remove_miss_times_seconds_count{cache=~"$jdbc_cache_names", namespace=~"$namespace", container="keycloak"}[5m])))
+                  seriesNameFormat: '{{pod}}'
+      '45':
+        kind: Panel
+        spec:
+          display:
+            name: Number of cache remove misses in 5 minutes interval
+            description: A remove operation removes a value from the cache. It divides in two groups, a hit if a value exists, and a miss if the value does not exist.
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (irate(vendor_statistics_remove_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$jdbc_cache_names"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '46':
+        kind: Panel
+        spec:
+          display:
+            name: Cache Size
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: cache_size{namespace=~"$namespace", container="keycloak", cache=~"$caffeine_cache"}
+                  seriesNameFormat: '{{pod}}'
+      '47':
+        kind: Panel
+        spec:
+          display:
+            name: Reads
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (rate(cache_gets_total{namespace=~"$namespace", container="keycloak", cache=~"$caffeine_cache"}[5m]))
+      '48':
+        kind: Panel
+        spec:
+          display:
+            name: Hit Ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: (rate(cache_gets_total{namespace=~"$namespace", container="keycloak", cache=~"$caffeine_cache", result="hit"}[5m])) / (rate(cache_gets_total{namespace=~"$namespace", container="keycloak",
+                    cache=~"$caffeine_cache"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '49':
+        kind: Panel
+        spec:
+          display:
+            name: Evictions
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (rate(cache_evictions_count{namespace=~"$namespace", container="keycloak", cache=~"$caffeine_cache"}[5m]))
+      '50':
+        kind: Panel
+        spec:
+          display:
+            name: Cache Size
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: vendor_statistics_approximate_entries{namespace=~"$namespace", container="keycloak", cache=~"$ispn_local_cache"}
+                  seriesNameFormat: '{{pod}}'
+      '51':
+        kind: Panel
+        spec:
+          display:
+            name: Reads
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_local_cache"}[5m]) + (rate(vendor_statistics_miss_times_seconds_count{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_local_cache"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '52':
+        kind: Panel
+        spec:
+          display:
+            name: Hit Ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: ( rate(vendor_statistics_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_local_cache"}[5m]) ) / ( rate(vendor_statistics_hit_times_seconds_count{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_local_cache"}[5m]) + rate(vendor_statistics_miss_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_local_cache"}[5m])
+                    )
+                  seriesNameFormat: '{{pod}}'
+      '53':
+        kind: Panel
+        spec:
+          display:
+            name: Evictions
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_evictions{namespace=~"$namespace", container="keycloak", cache=~"$ispn_local_cache"}[5m])
+                  seriesNameFormat: '{{pod}}'
+      '54':
+        kind: Panel
+        spec:
+          display:
+            name: Cache size
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: vendor_statistics_approximate_entries{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}
+                  seriesNameFormat: '{{pod}}'
+      '55':
+        kind: Panel
+        spec:
+          display:
+            name: Average Replication Time
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: milliseconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: vendor_rpc_manager_average_replication_time{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}
+                  seriesNameFormat: '{{pod}}'
+      '56':
+        kind: Panel
+        spec:
+          display:
+            name: Read Write Ratio
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: percent-decimal
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: ( rate(vendor_statistics_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m]) + rate(vendor_statistics_miss_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m]) ) / ( rate(vendor_statistics_hit_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m])
+                    + rate(vendor_statistics_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m]) + rate(vendor_statistics_remove_hit_times_seconds_count{container="keycloak",
+                    namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m]) + rate(vendor_statistics_remove_miss_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m])
+                    + rate(vendor_statistics_store_times_seconds_count{container="keycloak", namespace=~"$namespace", cache=~"$ispn_clustered_caches"}[5m]) )
+                  seriesNameFormat: '{{pod}}'
+      '57':
+        kind: Panel
+        spec:
+          display:
+            name: Writes
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_store_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m])
+                  seriesNameFormat: '{{pod}}'
+      '58':
+        kind: Panel
+        spec:
+          display:
+            name: Writes Times
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: ( rate(vendor_statistics_store_times_seconds_sum{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) ) / ( rate(vendor_statistics_store_times_seconds_count{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) )
+                  seriesNameFormat: '{{pod}}'
+      '59':
+        kind: Panel
+        spec:
+          display:
+            name: Evictions
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_evictions{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m])
+                  seriesNameFormat: '{{pod}}'
+      '60':
+        kind: Panel
+        spec:
+          display:
+            name: Reads
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) + (rate(vendor_statistics_miss_times_seconds_count{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_clustered_caches"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '61':
+        kind: Panel
+        spec:
+          display:
+            name: Reads Times
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: ( rate(vendor_statistics_hit_times_seconds_sum{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) + rate(vendor_statistics_miss_times_seconds_sum{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) ) / ( rate(vendor_statistics_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m])
+                    + rate(vendor_statistics_miss_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) )
+                  seriesNameFormat: '{{pod}}'
+      '62':
+        kind: Panel
+        spec:
+          display:
+            name: Removes
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: rate(vendor_statistics_remove_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) + (rate(vendor_statistics_remove_miss_times_seconds_count{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_clustered_caches"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '63':
+        kind: Panel
+        spec:
+          display:
+            name: Removes Times
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: seconds
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: ( rate(vendor_statistics_remove_hit_times_seconds_sum{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) + rate(vendor_statistics_remove_miss_times_seconds_sum{namespace=~"$namespace",
+                    container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) ) / ( rate(vendor_statistics_remove_hit_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m])
+                    + rate(vendor_statistics_remove_miss_times_seconds_count{namespace=~"$namespace", container="keycloak", cache=~"$ispn_clustered_caches"}[5m]) )
+                  seriesNameFormat: '{{pod}}'

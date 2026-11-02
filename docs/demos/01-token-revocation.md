@@ -1,6 +1,6 @@
 # Demo 1: Token revocation (the OAuth payoff)
 
-> [↑ Demo scenarios](../11-demos.md) · next: [Demo 2: Record Validation end-to-end](02-record-validation.md)
+> [↑ Demo scenarios](../10-demos.md) · next: [Demo 2: Record Validation end-to-end](02-record-validation.md)
 
 Show that identity is centralized in Keycloak: access stops at the next token expiry when a client is disabled — no credential rotation anywhere in the stack.
 

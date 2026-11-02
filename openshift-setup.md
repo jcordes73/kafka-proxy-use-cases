@@ -2,84 +2,10 @@
 
 Step-by-step instructions for deploying the full stack from the command line using the `oc` client — the **user-workload monitoring stack** (deployed first, [Step 1.1](docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once)), a **Streams for Apache Kafka cluster**, the **Red Hat build of Keycloak** OIDC authorization server (`kafka-auth` namespace), the **proxy Operator**, a working proxy with a virtual cluster, the **Kafka HTTP Bridge** as a proxy client, the **Streams for Apache Kafka Console** UI, and **Camel Quarkus** producer/consumer clients — with every component integrated into **OpenShift's built-in observability stack** (user-workload monitoring) in [Step 1](docs/01-user-workload-monitoring.md#step-1-integrate-the-stack-with-openshift-user-workload-monitoring-observability) — based on the [Streams for Apache Kafka 3.2 proxy documentation](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_proxy_on_openshift).
 
-> **Divergences from the Red Hat documentation** (all verified against a live cluster; ready-to-apply manifests in [`deploy/`](deploy/README.md)):
->
-> - **Proxy operator via OperatorHub/OLM — the officially supported Red Hat build** (`amq-streams-proxy` package, operator CSV v3.2.2-4, [Step 6.1](docs/06-proxy.md#61--install-the-proxy-operator)). Verified live: the operator supports only the AllNamespaces InstallMode (subscription in `openshift-operators`) and does not resolve cross-namespace `strimziKafkaRef` referents (KafkaService uses explicit `bootstrapServers` + copied cluster CA, [Step 6.5](docs/06-proxy.md#65--define-the-backend-cluster-kafkaservice)). The console operator, by contrast, is the **Red Hat OLM artifact** (`amq-streams-console` package, [Step 8.1](docs/08-console.md#81--install-the-console-operator)) — with behavior differences from the upstream non-OLM install noted there and in [Step 1.7](docs/01-user-workload-monitoring.md#17--console-kafka-console-read-metrics-from-user-workload-monitoring).
-> - **Proxy bootstrap port is operator-allocated** — 9292 with the operator versions used here; the Red Hat guide's examples do not pin a port, so read it from the generated Service ([Step 6.10](docs/06-proxy.md#610--apply-and-verify)).
-> - **Strimzi 0.51 API changes** — the `authentication.type: oauth` listener type is deprecated in 3.2 (use `custom` auth — see [Step 2.5](docs/02-keycloak.md#25--client-authentication-at-the-proxy)).
-> - **OAuth end-to-end on the data path** — the Kafka cluster's `tls` listener (9093, the proxy's upstream) requires SASL/OAUTHBEARER (the only mechanism), configured via Strimzi 0.51 `custom` auth with the Strimzi OAuth callback handlers ([Step 3.2](docs/03-kafka-cluster.md#32--create-the-kafka-cluster), [deploy/kafka/02-kafka.yaml](deploy/kafka/02-kafka.yaml)). Tokens come from the `kafka` realm service-account clients ([deploy/keycloak/04-kafka-realm-import.yaml](deploy/keycloak/04-kafka-realm-import.yaml)); the proxy relays the SASL/OAUTHBEARER exchange (passthrough) and cannot authenticate upstream itself ([Step 2.5](docs/02-keycloak.md#25--client-authentication-at-the-proxy)). Keycloak serves the console's OIDC login too (Steps [1](docs/02-keycloak.md#step-2-install-red-hat-build-of-keycloak-kafka-auth-namespace) and [13](docs/08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)).
-> - **Camel images built in-cluster** via OpenShift BuildConfigs instead of an external registry ([Step 9.4](docs/09-camel-clients.md#94--build-and-deploy-the-containers)).
-> - **Record Validation config drift** — the Red Hat 3.2 Record Validation guide documents a `wireFormatVersion` option that the deployed proxy does not have; omit it ([Demo scenarios, Demo 2](docs/demos/02-record-validation.md)).
-> - **Apicurio Registry operator NetworkPolicy behavior** — the Red Hat Apicurio docs say `spec.app.networkPolicy.enabled: false` leaves NetworkPolicies to you, but the operator (3.2.6) re-creates its allow-all policies when the setting is changed on an **existing** resource; deploy the CR with the setting from the start ([Step 5.3](docs/05-apicurio-registry.md#53--lock-down-the-registry-network)).
-
 ---
 
 
-## Guide map
-
-The guide is split into one document per component under [`docs/`](docs). The step
-numbering (**1–11**) matches the **deployment order** (step 12 is the demo
-walkthrough, not a deployment step), and each component's first
-manifest creates its namespace:
-
-| Step | Document | Component | Notes |
-|---|---|---|---|
-| [1](docs/01-user-workload-monitoring.md) | [User-workload monitoring](docs/01-user-workload-monitoring.md) | OpenShift user-workload monitoring — [1.1](docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) enables the stack (deployed **first**; cluster-admin, once), [1.2–1.10](docs/01-user-workload-monitoring.md#12--allow-the-monitoring-stack-into-the-locked-down-namespaces) is the per-component integration (netpols, PodMonitors, console metrics source, alert rules, optional Perses dashboards — deployed after those components exist) | deployed first and last |
-| [2](docs/02-keycloak.md) | [Keycloak](docs/02-keycloak.md) | Red Hat build of Keycloak — OIDC authorization server (`kafka-auth`) | |
-| [3](docs/03-kafka-cluster.md) | [Deploy the Kafka cluster](docs/03-kafka-cluster.md) | Streams for Apache Kafka cluster (secure backend) + backend lockdown NetworkPolicies; per-principal quotas ([3.5](docs/03-kafka-cluster.md#35--quotas-per-principal-broker-enforced)) | |
-| [4](docs/04-mirrormaker2.md) | [MirrorMaker 2](docs/04-mirrormaker2.md) | Replication between the two clusters (optional) | |
-| [5](docs/05-apicurio-registry.md) | [Apicurio Registry](docs/05-apicurio-registry.md) | Registry operator, dev PostgreSQL, `ApicurioRegistry3`, schema registration (5.1–5.4) | |
-| [6](docs/06-proxy.md) | [Proxy](docs/06-proxy.md) | Streams for Apache Kafka Proxy — operator, virtual cluster, ingress, TLS, DNS (subsections 6.1–6.10) | |
-| [7](docs/07-http-bridge.md) | [HTTP Bridge](docs/07-http-bridge.md) | Kafka HTTP Bridge as DMZ client (connects through the proxy) | |
-| [8](docs/08-console.md) | [Console](docs/08-console.md) | Streams for Apache Kafka Console UI (connects through the proxy, OIDC via Keycloak) | |
-| [9](docs/09-camel-clients.md) | [Camel clients](docs/09-camel-clients.md) | Camel Quarkus producer/consumer | |
-| [11](docs/11-demos.md) | [Demo scenarios](docs/11-demos.md) | 13 ready-made demos — including the Record Validation demo (Demo 2: topic + filter wiring, optional) | |
-| [12](docs/12-demos-walkthrough.md) | [End-to-end demo walkthrough](docs/12-demos-walkthrough.md) | The demos as one presentation — arc, talking points, timing, and reverts between acts | |
-
-Troubleshooting tips covering the whole stack are at the [end of this document](#troubleshooting-tips).
-
----
-
-## Prerequisites
-
-- **OpenShift cluster 4.18 or later** (3.2 is tested on 4.16–4.21, excluding 4.17).
-- `oc` CLI installed and configured to connect to the cluster:
-
-  ```bash
-  oc login --token=<token> --server=<cluster-url>
-  oc whoami
-  ```
-
-- An account with permission to create `CustomResourceDefinition` and RBAC (`ClusterRole`) resources (for the operator install):
-
-  ```bash
-  oc auth can-i create customresourcedefinitions
-  oc auth can-i create clusterroles
-  ```
-
-- A **Kafka cluster available to be proxied** — it may run in the same OpenShift cluster or elsewhere; only network connectivity is required. If you don't have one, deploy one with Streams for Apache Kafka in [Step 3](docs/03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka).
-- TLS certificate generation capability (for ingress types that require TLS).
-- DNS management access (only for `loadBalancer` ingress).
-
-All commands below assume a namespace of `kafka-proxy` — adjust to yours, and create it first if needed:
-
-```bash
-oc new-project kafka-proxy
-```
-
-> **Declarative namespaces:** every component's first manifest carries its own `Namespace` — applying a component's directory creates its namespace:
->
-> - `kafka` and `kafka-proxy` — ship with the operator installs ([Step 3.1](docs/03-kafka-cluster.md#31--install-the-cluster-operator), [Step 6.1](docs/06-proxy.md#61--install-the-proxy-operator))
-> - `kafka-auth` — the standalone [deploy/keycloak/00-namespace.yaml](deploy/keycloak/00-namespace.yaml) ([Step 2.1](docs/02-keycloak.md#21--install-the-keycloak-operator-into-kafka-auth))
-> - `kafka-cluster-1` / `kafka-cluster-2` / `kafka-http-bridge` — [deploy/kafka/00-cluster-namespaces.yaml](deploy/kafka/00-cluster-namespaces.yaml)
-> - `kafka-mm2` — [deploy/mirrormaker2/00-namespace.yaml](deploy/mirrormaker2/00-namespace.yaml)
-> - `kafka-console` — the console operator ([Step 8](docs/08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace))
-> - `kafka-producer` / `kafka-consumer` — the Camel BuildConfigs ([Step 9](docs/09-camel-clients.md#step-9-deploy-camel-producer-and-consumer-clients-kafka-producer-and-kafka-consumer-namespaces))
-> - `api-gateway` (stand-in) — the bridge's DMZ NetworkPolicies
->
-> The `oc new-project` commands below remain as a shortcut for step-by-step runs.
-
-### The architecture you'll deploy
+## The architecture you'll deploy
 
 By the end of this guide, the stack looks like this — the **proxy and HTTP Bridge in the DMZ** as the clusters' doors, the **Kafka clusters and the optional MirrorMaker 2 replication plane in the secure backend** (Step 4):
 
@@ -175,6 +101,83 @@ How to read it:
 
 ---
 
+## Prerequisites
+
+- **OpenShift cluster 4.18 or later** (3.2 is tested on 4.16–4.21, excluding 4.17).
+- `oc` CLI installed and configured to connect to the cluster:
+
+  ```bash
+  oc login --token=<token> --server=<cluster-url>
+  oc whoami
+  ```
+
+- An account with permission to create `CustomResourceDefinition` and RBAC (`ClusterRole`) resources (for the operator install):
+
+  ```bash
+  oc auth can-i create customresourcedefinitions
+  oc auth can-i create clusterroles
+  ```
+
+- A **Kafka cluster available to be proxied** — it may run in the same OpenShift cluster or elsewhere; only network connectivity is required. If you don't have one, deploy one with Streams for Apache Kafka in [Step 3](docs/03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka).
+- TLS certificate generation capability (for ingress types that require TLS).
+- DNS management access (only for `loadBalancer` ingress).
+
+All commands below assume a namespace of `kafka-proxy` — adjust to yours, and create it first if needed:
+
+```bash
+oc apply -f deploy/proxy/00-namespace.yaml
+```
+
+> **Declarative namespaces:** every component's first manifest carries its own `Namespace` — applying a component's directory creates its namespace:
+>
+> - `kafka` — ships with the cluster-operator install ([Step 3.1](docs/03-kafka-cluster.md#31--install-the-cluster-operator))
+> - `kafka-proxy` — the standalone [deploy/proxy/00-namespace.yaml](deploy/proxy/00-namespace.yaml) ([Step 6.1](docs/06-proxy.md#61--install-the-proxy-operator)) — the proxy operator's OLM subscription lives in `openshift-operators` (AllNamespaces InstallMode) and creates no namespaces
+> - `kafka-auth` — the standalone [deploy/keycloak/00-namespace.yaml](deploy/keycloak/00-namespace.yaml) ([Step 2.1](docs/02-keycloak.md#21--install-the-keycloak-operator-into-kafka-auth))
+> - `kafka-cluster-1` / `kafka-cluster-2` / `kafka-http-bridge` — [deploy/kafka/00-cluster-namespaces.yaml](deploy/kafka/00-cluster-namespaces.yaml)
+> - `kafka-mm2` — [deploy/mirrormaker2/00-namespace.yaml](deploy/mirrormaker2/00-namespace.yaml)
+> - `kafka-console` — the console operator ([Step 8](docs/08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace))
+> - `kafka-producer` / `kafka-consumer` — the Camel BuildConfigs ([Step 9](docs/09-camel-clients.md#step-9-deploy-camel-producer-and-consumer-clients-kafka-producer-and-kafka-consumer-namespaces))
+> - `api-gateway` (stand-in) — the bridge's DMZ NetworkPolicies
+>
+> The `oc new-project` commands below remain as a shortcut for step-by-step runs.
+
+
+---
+
+## Guide map
+
+The guide is split into one document per component under [`docs/`](docs). The step
+numbering (**1–10**) matches the **deployment order** (step 11 is the demo
+walkthrough, not a deployment step), and each component's first
+manifest creates its namespace:
+
+| Step | Document | Component | Notes |
+|---|---|---|---|
+| [1](docs/01-user-workload-monitoring.md) | [User-workload monitoring](docs/01-user-workload-monitoring.md) | OpenShift user-workload monitoring — [1.1](docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) enables the stack (deployed **first**; cluster-admin, once), [1.2–1.10](docs/01-user-workload-monitoring.md#12--allow-the-monitoring-stack-into-the-locked-down-namespaces) is the per-component integration (netpols, PodMonitors, console metrics source, alert rules, optional Perses dashboards — deployed after those components exist) | deployed first and last |
+| [2](docs/02-keycloak.md) | [Keycloak](docs/02-keycloak.md) | Red Hat build of Keycloak — OIDC authorization server (`kafka-auth`) | |
+| [3](docs/03-kafka-cluster.md) | [Deploy the Kafka cluster](docs/03-kafka-cluster.md) | Streams for Apache Kafka cluster (secure backend) + backend lockdown NetworkPolicies; per-principal quotas ([3.5](docs/03-kafka-cluster.md#35--quotas-per-principal-broker-enforced)) | |
+| [4](docs/04-mirrormaker2.md) | [MirrorMaker 2](docs/04-mirrormaker2.md) | Replication between the two clusters (optional) | |
+| [5](docs/05-apicurio-registry.md) | [Apicurio Registry](docs/05-apicurio-registry.md) | Registry operator, dev PostgreSQL, `ApicurioRegistry3`, schema registration (5.1–5.4) | |
+| [6](docs/06-proxy.md) | [Proxy](docs/06-proxy.md) | Streams for Apache Kafka Proxy — operator, virtual cluster, ingress, TLS, DNS (subsections 6.1–6.10) | |
+| [7](docs/07-http-bridge.md) | [HTTP Bridge](docs/07-http-bridge.md) | Kafka HTTP Bridge as DMZ client (connects through the proxy) | |
+| [8](docs/08-console.md) | [Console](docs/08-console.md) | Streams for Apache Kafka Console UI (connects through the proxy, OIDC via Keycloak) | |
+| [9](docs/09-camel-clients.md) | [Camel clients](docs/09-camel-clients.md) | Camel Quarkus producer/consumer | |
+| [10](docs/10-demos.md) | [Demo scenarios](docs/10-demos.md) | 13 ready-made demos — including the Record Validation demo (Demo 2: topic + filter wiring, optional) | |
+| [11](docs/11-demos-walkthrough.md) | [End-to-end demo walkthrough](docs/11-demos-walkthrough.md) | The demos as one presentation — arc, talking points, timing, and reverts between acts | |
+
+Troubleshooting tips covering the whole stack are at the [end of this document](#troubleshooting-tips).
+
+> **Divergences from the Red Hat documentation** (all verified against a live cluster; ready-to-apply manifests in [`deploy/`](deploy/README.md)):
+>
+> - **OAuth end-to-end on the data path — an extension beyond the Red Hat proxy docs** (Chapter 6, "Securing a proxy", covers TLS/mTLS/ciphers only — no SASL/OAUTHBEARER anywhere): the Kafka cluster's `tls` listener (9093, the proxy's upstream) requires SASL/OAUTHBEARER (the only mechanism), configured via Strimzi 0.51 `custom` auth with the Strimzi OAuth callback handlers ([Step 3.2](docs/03-kafka-cluster.md#32--create-the-kafka-cluster), [deploy/kafka/02-kafka.yaml](deploy/kafka/02-kafka.yaml)). Tokens come from the `kafka` realm service-account clients ([deploy/keycloak/04-kafka-realm-import.yaml](deploy/keycloak/04-kafka-realm-import.yaml)); the proxy relays the SASL/OAUTHBEARER exchange (passthrough) and cannot authenticate upstream itself ([Step 2.5](docs/02-keycloak.md#25--client-authentication-at-the-proxy)). Keycloak serves the console's OIDC login too (Steps [2](docs/02-keycloak.md#step-2-install-red-hat-build-of-keycloak-kafka-auth-namespace) and [8](docs/08-console.md#step-8-deploy-the-streams-for-apache-kafka-console-kafka-console-namespace)).
+> - **Record Validation config drift** — the Red Hat 3.2 Record Validation guide documents a `wireFormatVersion` option that the deployed proxy does not have; omit it ([Demo scenarios, Demo 2](docs/demos/02-record-validation.md)).
+> - **Apicurio Registry operator NetworkPolicy behavior** — the Red Hat Apicurio docs say `spec.app.networkPolicy.enabled: false` leaves NetworkPolicies to you, but the operator (3.2.6) re-creates its allow-all policies when the setting is changed on an **existing** resource; deploy the CR with the setting from the start ([Step 5.3](docs/05-apicurio-registry.md#53--lock-down-the-registry-network)).
+> - **Console OIDC: the realm must provide a `groups` client scope** (verified live, fixed by adding it — the Red Hat console docs don't call this out): the console's OIDC flow requests scopes **`openid email profile groups`** at the token exchange, and without a `groups` client scope in the realm the exchange fails with `Invalid scopes` (`OAUTH_CALLBACK_ERROR` in the console-ui logs) and the login **redirect-loops** between `/api/auth/signin` and Keycloak. Fix: a `groups` client scope with a Group Membership mapper, attached as a default client scope on the `kafka-console` client ([Step 8.3](docs/08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc), [deploy/keycloak/04-kafka-realm-import.yaml](deploy/keycloak/04-kafka-realm-import.yaml)).
+> - **Console Kafka connection: client credentials must be in `sasl.jaas.config`** (verified live): Kafka 4.x's client-side `OAuthBearerLoginCallbackHandler` reads `clientId`/`clientSecret` from the **JAAS options only** — the flat `sasl.oauthbearer.client.credentials.client.id`/`.secret` properties are ignored ("The OAuth configuration option clientId value must be non-null"), and the console's `AdminClient` then retries connections silently until every call ends in "Timed out waiting for a node assignment" → **HTTP 504 on every Kafka page**. Put the credentials in the JAAS options ([Step 8.2](docs/08-console.md#82--deploy-the-console-connected-to-the-virtual-cluster), [deploy/console/02-kafka-console.yaml](deploy/console/02-kafka-console.yaml)).
+> - **Console Kafka connection: `security.protocol: SASL_SSL` must be set explicitly per cluster entry** (verified live): without it the Kafka client defaults to **PLAINTEXT**, and against the proxy's TLS-only virtual-cluster ingress (9292) the plaintext ClientHello is rejected — connections fail silently (no console-api log lines, zero established sockets) and every Admin call ends in the same 504 timeout. The physical-cluster entries need it too; the Red Hat console docs' examples do not call out the per-entry requirement ([Step 8.2](docs/08-console.md#82--deploy-the-console-connected-to-the-virtual-cluster)).
+
+---
+
 ## Troubleshooting Tips
 
 - **Operator not ready** — check the deployment and pod logs in the operator namespace:
@@ -198,7 +201,7 @@ How to read it:
 - **`openShiftRoute` rejected** — the operator checks for the OpenShift Route API; this ingress type is only valid on OpenShift, not plain Kubernetes.
 - **Missing KMS key with Record Encryption** — records silently pass through unencrypted; watch the proxy metrics to catch this.
 - **HTTP Bridge not reconciled** — the Cluster Operator must watch the bridge's namespace; check `STRIMZI_NAMESPACE` ([Step 7.1](docs/07-http-bridge.md#71--create-the-namespace-and-extend-the-cluster-operator-watch)) and the RoleBindings in `kafka-http-bridge`.
-- **Console shows no data / can't connect** — verify the console's `kafkaClusters` entry points at the proxy's virtual cluster (`kind: virtualkafkaclusters.kroxylicious.io`, `namespace: kafka-proxy`) with the correct `bootstrap.servers` value; direct connections to the Kafka pods from `kafka-console` are denied by the [Step 3.4](docs/03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) NetworkPolicies.
+- **Console shows no data / can't connect** — verify the console's `kafkaClusters` entry points at the proxy's virtual cluster (`kind: virtualkafkaclusters.kroxylicious.io`, `namespace: kafka-proxy`) with the correct `bootstrap.servers` value; direct connections to the Kafka pods from `kafka-console` are denied by the [Step 3.4](docs/03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) NetworkPolicies. Console-specific failure signatures (all verified live, see [Step 8](docs/08-console.md)): **login redirect-loop** — the realm lacks the `groups` client scope the console requests (`Invalid scopes` → `OAUTH_CALLBACK_ERROR` in the console-ui logs, [Step 8.3](docs/08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc)); **every Kafka page 504s after ~5s** — the JAAS config carries no credentials (Kafka 4.x ignores the flat `sasl.oauthbearer.client.credentials.*` properties) or the entry lacks `security.protocol: SASL_SSL` (PLAINTEXT against the TLS-only virtual-cluster ingress) — while the login itself works (OIDC fine, `kafka-admin` in the console-api access log).
 - **Camel clients can't connect** — verify `camel.component.kafka.brokers` points at the proxy's clusterIP bootstrap (not the Kafka cluster's), and that the Camel Kafka component property is used (not the Quarkus `kafka.bootstrap.servers` key — see [Step 9.3](docs/09-camel-clients.md#93--connect-both-clients-to-the-proxy)).
 - **HTTP Bridge connects but produce fails** — verify `bootstrapServers` points at the proxy's clusterIP bootstrap (not the Kafka cluster's), and that the bridge trusts the proxy's CA when the ingress uses TLS.
 - **Bridge/consumer group joins stall through the proxy** — if a consumer creates and subscribes but `GET …/records` returns `[]` for a while, allow ~20–30 s for the group rebalance to complete through the proxy before concluding failure.

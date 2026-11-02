@@ -39,6 +39,30 @@ spec:
     # instead of Keycloak's default IGNORE, which would silently skip them.
     strategy: OVERWRITE
     realm: kafka
+    # Realm client scope providing the `groups` claim (verified live, fixed:
+    # the console's OIDC flow requests `openid email profile groups` at the
+    # token exchange — without this scope the exchange fails with
+    # "Invalid scopes" and the console login redirect-loops between
+    # /api/auth/signin and Keycloak). The kafka-console client below attaches
+    # it as a default client scope.
+    clientScopes:
+      - name: groups
+        description: Group membership claims for the Streams for Apache Kafka Console role mapping
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: group-membership
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            consentRequired: false
+            config:
+              full.group.path: "false"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: groups
     enabled: true
     # Short-lived access tokens (5 min) — access stops quickly on revocation
     accessTokenLifespan: 300
@@ -60,6 +84,8 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - "https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*"
+        defaultClientScopes:
+          - groups
       # Service-account clients — SASL/OAUTHBEARER credentials for the Kafka
       # data path (client_credentials grant). The service account's
       # preferred_username (service-account-<clientId>) becomes the Kafka

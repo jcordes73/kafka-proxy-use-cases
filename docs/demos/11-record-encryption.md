@@ -1,6 +1,6 @@
 # Demo 11: Record Encryption at rest
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 10: MM2 failover / failback](10-mm2-failover.md) · next: [Demo 12: Schema evolution](12-schema-evolution.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 10: MM2 failover / failback](10-mm2-failover.md) · next: [Demo 12: Schema evolution](12-schema-evolution.md)
 
 Envelope encryption at the proxy with a dev-mode Vault as KMS — **the wow-factor demo**:
 

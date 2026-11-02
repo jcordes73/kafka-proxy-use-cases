@@ -1,6 +1,6 @@
 # Demo 10: MM2 failover / failback
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 9: Multi-tenant virtual clusters](09-multi-tenant-virtual-clusters.md) · next: [Demo 11: Record Encryption at rest](11-record-encryption.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 9: Multi-tenant virtual clusters](09-multi-tenant-virtual-clusters.md) · next: [Demo 11: Record Encryption at rest](11-record-encryption.md)
 
 The offset-translation variant of the replication:
 

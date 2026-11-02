@@ -1,8 +1,8 @@
 # Demo 2: Record Validation end-to-end
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 1: Token revocation](01-token-revocation.md) · next: [Demo 3: Live migration / cutover](03-live-migration.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 1: Token revocation](01-token-revocation.md) · next: [Demo 3: Live migration / cutover](03-live-migration.md)
 
-> **Deployment order:** the filter deploys **after the proxy** (it wires `filterRefs` into the proxy's virtual cluster); with the demo scenarios at Step 11 that prerequisite is always satisfied. The schema (`APICURIO_CONTENT_ID`) comes from [Step 5.4](../05-apicurio-registry.md#54--register-a-schema).
+> **Deployment order:** the filter deploys **after the proxy** (it wires `filterRefs` into the proxy's virtual cluster); with the demo scenarios at Step 10 that prerequisite is always satisfied. The schema (`APICURIO_CONTENT_ID`) comes from [Step 5.4](../05-apicurio-registry.md#54--register-a-schema).
 
 [`deploy/demos/02-record-validation-demo.yaml`](../../deploy/demos/02-record-validation-demo.yaml) declares the `KafkaProtocolFilter` — a `RecordValidation` rule scoped to `topic-A` that checks record **values** against the registered schema (`apicurioId` = the contentId from Step 5.4). topic-A is **not declared** in the manifest: it already exists on both clusters (created directly with `kafka-topics.sh` in [Step 3.2](../03-kafka-cluster.md#32--create-the-kafka-cluster)). `allowNulls`/`allowEmpty` sit **inside** the rule definition (as siblings of `schemaValidationConfig`), and there is no `defaultRule` — all other topics pass through unvalidated:
 

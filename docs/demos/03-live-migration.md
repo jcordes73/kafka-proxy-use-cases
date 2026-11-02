@@ -1,6 +1,6 @@
 # Demo 3: Live migration / cutover (MM2)
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 2: Record Validation end-to-end](02-record-validation.md) · next: [Demo 4: DMZ pivot attempt](04-dmz-pivot.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 2: Record Validation end-to-end](02-record-validation.md) · next: [Demo 4: DMZ pivot attempt](04-dmz-pivot.md)
 
 The migration pattern from use case [5 in the guide](../../README.md#5-cluster-migration--upstream-switching):
 

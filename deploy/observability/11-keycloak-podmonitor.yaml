@@ -1,0 +1,32 @@
+# deploy/observability/11-keycloak-podmonitor.yaml — Step 1.4 (docs/01-user-workload-monitoring.md)
+# Scrape the Red Hat build of Keycloak's management port (9000, /metrics).
+# The Keycloak CR enables metrics (spec.additionalOptions metrics-enabled=true);
+# the management endpoint serves HTTPS with the Keycloak TLS cert (verified
+# live: http:// returns an empty reply / exit 52, https:// returns 200), so the
+# PodMonitor needs scheme: https + insecureSkipVerify (the cert is the
+# self-signed keycloak-tls-secret — not in the UWM CA bundle).
+#
+# ⚠️ NETWORKPOLICY: the operator-created `keycloak-network-policy` allows
+# ingress on 9000 WITHOUT a source restriction (verified live), so UWM can
+# scrape it — no allow-monitoring netpol needed.
+#
+# Apply with:
+#   oc apply -f deploy/observability/11-keycloak-podmonitor.yaml
+# Verify with (needs the Perses datasource token, Step 1.10):
+#   up{namespace="kafka-auth", container="keycloak"} == 1
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: keycloak-metrics
+  namespace: kafka-auth
+spec:
+  selector:
+    matchLabels:
+      app: keycloak
+  podMetricsEndpoints:
+    - path: /metrics
+      port: management
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true

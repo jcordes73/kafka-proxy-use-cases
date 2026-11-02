@@ -1,8 +1,8 @@
-# Step 11: Demo Scenarios
+# Step 10: Demo Scenarios
 
-> [↑ Setup overview](../openshift-setup.md) · next: [Step 12: Demo walkthrough](12-demos-walkthrough.md)
+> [↑ Setup overview](../openshift-setup.md) · next: [Step 11: Demo walkthrough](11-demos-walkthrough.md)
 
-Ready-made walkthroughs for demonstrating the stack — one document per demo under [`docs/demos/`](demos). For running them as a **single presentation**, see the [end-to-end demo walkthrough](12-demos-walkthrough.md) — the demos in a building order with talking points, timing, and the revert between acts. The table below is ordered like the [Use Case Catalog](../README.md#use-case-catalog); the document file names keep the original demo numbers.
+Ready-made walkthroughs for demonstrating the stack — one document per demo under [`docs/demos/`](demos). For running them as a **single presentation**, see the [end-to-end demo walkthrough](11-demos-walkthrough.md) — the demos in a building order with talking points, timing, and the revert between acts. The table below is ordered like the [Use Case Catalog](../README.md#use-case-catalog); the document file names keep the original demo numbers.
 
 Scenarios 1, 2, 6–8, 10 and 12 need **no new infrastructure** — they exercise what is already deployed (see the [setup steps](../openshift-setup.md#guide-map)). Scenarios 3, 4 and 13 apply a demo manifest from [`deploy/demos/`](../deploy/README.md) that **replaces** the `kafka-cluster-1` `VirtualKafkaCluster` wiring — revert each with `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`. Scenario 5 applies a manifest that **adds** a third virtual cluster (revert with `oc delete virtualkafkacluster/shared-cluster-1 -n kafka-proxy`), and scenario 9 replaces the running `KafkaMirrorMaker2` (same name). Scenario 11 applies a manifest that **adds** a demo topic and a Record Validation filter (revert by removing the `filterRefs` entry).
 

@@ -74,7 +74,7 @@ This cluster's bootstrap address and broker IDs feed directly into the proxy's `
 - `bootstrapServers`: `kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093` (tls listener — the proxy's upstream)
 - Broker node IDs: `0`–`2` → `nodeIdRanges: { start: 0, end: 2 }`
 
-Because the cluster uses the `tls` listener, the proxy can connect over TLS with the Strimzi-generated CA — `trustAnchorRef` on the `KafkaService` can auto-trust it (see [Step 6.5](06-proxy.md#65--define-the-backend-cluster-kafkaservice)). With OAUTHBEARER on that listener, the proxy relays the client's SASL/OAUTHBEARER exchange to the brokers (SASL passthrough) — the proxy cannot authenticate to the brokers itself, so every client of the virtual cluster must authenticate with OAUTHBEARER using a token from the `kafka` realm (see [Step 2.5](02-keycloak.md#25--client-authentication-at-the-proxy)).
+Because the cluster uses the `tls` listener, the proxy can connect over TLS with the operator-generated CA — `trustAnchorRef` on the `KafkaService` can auto-trust it (see [Step 6.5](06-proxy.md#65--define-the-backend-cluster-kafkaservice)). With OAUTHBEARER on that listener, the proxy relays the client's SASL/OAUTHBEARER exchange to the brokers (SASL passthrough) — the proxy cannot authenticate to the brokers itself, so every client of the virtual cluster must authenticate with OAUTHBEARER using a token from the `kafka` realm (see [Step 2.5](02-keycloak.md#25--client-authentication-at-the-proxy)).
 
 > **Production notes:** use **dedicated controller and broker node pools** (at least 3 controllers), `persistent-claim` storage sized for your retention, the `tls` listener with authentication (`tls` client auth or OAuth), and consider Cruise Control for rebalancing. See [*Deploying and Managing Streams for Apache Kafka on OpenShift*](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html/deploying_and_managing_streams_for_apache_kafka_on_openshift) for full configuration guidance.
 
@@ -93,9 +93,9 @@ oc apply -f deploy/kafka/03-kafka-netpol-dmz.yaml
 oc get networkpolicies -n kafka-cluster-1
 ```
 
-Verify the DMZ behaves as intended (the `kafka-proxy` namespace is created by the
-proxy operator install in [Step 6.1](06-proxy.md#61--install-the-proxy-operator) —
-`oc new-project kafka-proxy` as a shortcut if you are running strictly in order):
+Verify the DMZ behaves as intended (create the `kafka-proxy` namespace first —
+nothing creates it: `oc apply -f deploy/proxy/00-namespace.yaml`
+([Step 6.1](06-proxy.md#61--install-the-proxy-operator)) or `oc new-project kafka-proxy`):
 
 ```bash
 # From another namespace (e.g., default): connection should TIME OUT
@@ -110,7 +110,7 @@ oc run kcat-allowed --rm -i --restart=Never --image=confluentinc/cp-kcat:latest 
 Notes:
 
 - **Cluster Operator in another namespace?** The same-namespace rule covers the operator because this guide installs it into the cluster's namespace. If yours runs elsewhere, add a `namespaceSelector` entry for its namespace to policy 2.
-- **Strimzi-generated listener policy:** since Streams 3.2 (Strimzi 0.51), the operator also creates `<cluster-name>-network-policy-kafka` — without per-listener `networkPolicyPeers` (see [Step 3.2](#32--create-the-kafka-cluster)) it permits **all namespaces** on the listener ports, which defeats this DMZ. After applying, list `oc get networkpolicies -n kafka-cluster-1` and confirm the generated policy's listener rules honour the peers you set.
+- **Operator-generated listener policy:** since Streams 3.2 (Strimzi 0.51), the operator also creates `<cluster-name>-network-policy-kafka` — without per-listener `networkPolicyPeers` (see [Step 3.2](#32--create-the-kafka-cluster)) it permits **all namespaces** on the listener ports, which defeats this DMZ. After applying, list `oc get networkpolicies -n kafka-cluster-1` and confirm the generated policy's listener rules honour the peers you set.
 - **Direct-broker checks**: with the DMZ in place, "consume directly from the broker" verification (e.g., checking ciphertext after enabling Record Encryption) must run from the cluster's or `kafka-proxy` namespace — from any other namespace it will be denied. That denial is the point.
 - **Do not** add a `kubernetes.io/metadata.name: kafka` label requirement to policy 2 — podSelector rules already match by namespace; keep the same-namespace rule as shown.
 - For defense in depth, also restrict the `kafka-proxy` namespace's **egress** to the Kafka brokers (plus the operator/API servers) so the proxy pod cannot be used as a pivot into the cluster.
@@ -147,4 +147,4 @@ oc run kafka-quotas --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest
 
 `--entity-type clients` keys on the `client.id` the **brokers** see — with the proxy relaying requests, prefer per-user quotas (per-client-id applies only if the client's `client.id` reaches the broker unchanged).
 
-**Strimzi `KafkaUser` quotas — why not, for this stack:** a `KafkaUser` resource supports `spec.quota` (`producerByteRate`, `consumerByteRate`, `requestPercentage`, `controllerMutationRate`), but the User Operator keys the quota on the principal format of the KafkaUser's `spec.authentication.type` — `CN=<name>` for `tls`/`tls-external` (mTLS principals), `<name>` for `scram-sha-512`. There is **no OAuth authentication type for `KafkaUser`**, and this stack's listeners are OAUTHBEARER-only (Keycloak), so a `KafkaUser` named to match an OAuth principal would need `scram-sha-512` auth — creating an unusable SCRAM credential just to carry the quota. Setting the quota directly with `kafka-configs.sh` (above) keys it on the OAuth principal with no side-effect credentials. A `KafkaUser` with `spec.quota` remains the right tool when clients authenticate with certificates or SCRAM managed by Strimzi.
+**`KafkaUser` quotas — why not, for this stack:** a `KafkaUser` resource supports `spec.quota` (`producerByteRate`, `consumerByteRate`, `requestPercentage`, `controllerMutationRate`), but the User Operator keys the quota on the principal format of the KafkaUser's `spec.authentication.type` — `CN=<name>` for `tls`/`tls-external` (mTLS principals), `<name>` for `scram-sha-512`. There is **no OAuth authentication type for `KafkaUser`**, and this stack's listeners are OAUTHBEARER-only (Keycloak), so a `KafkaUser` named to match an OAuth principal would need `scram-sha-512` auth — creating an unusable SCRAM credential just to carry the quota. Setting the quota directly with `kafka-configs.sh` (above) keys it on the OAuth principal with no side-effect credentials. A `KafkaUser` with `spec.quota` remains the right tool when clients authenticate with certificates or SCRAM managed by Strimzi.

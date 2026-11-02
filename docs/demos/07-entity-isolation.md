@@ -1,6 +1,6 @@
 # Demo 7: Entity isolation (preview)
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 6: Authorization at the proxy](06-proxy-authorization.md) · next: [Demo 8: Token validation on the Kafka cluster](08-token-validation.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 6: Authorization at the proxy](06-proxy-authorization.md) · next: [Demo 8: Token validation on the Kafka cluster](08-token-validation.md)
 
 Each authenticated principal gets a **private namespace for consumer groups and transactional IDs** within the shared cluster — no coordination needed, no collisions possible.
 

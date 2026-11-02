@@ -21,6 +21,11 @@ The deployed operator is the **officially supported Red Hat build** (`amq-stream
 > **Install mode (verified live):** this operator supports **only the AllNamespaces InstallMode** — OwnNamespace/SingleNamespace/MultiNamespace are unsupported (a subscription in `kafka-proxy` with a targeted OperatorGroup fails with "OwnNamespace InstallModeType not supported"). The subscription therefore lives in `openshift-operators` (pre-existing global OperatorGroup — none needed here), while the proxy CRs live in `kafka-proxy` (`deploy/proxy/02–06`); the operator watches all namespaces.
 
 ```bash
+# The kafka-proxy namespace — nothing creates it (the OLM subscription lives in
+# openshift-operators and cannot create namespaces), and the proxy CRs (Steps
+# 6.3–6.7) as well as Step 3.4's DMZ verification need it:
+oc apply -f deploy/proxy/00-namespace.yaml
+
 oc apply -f deploy/proxy/00-proxy-operator-olm.yaml
 
 oc get installplan -n openshift-operators
@@ -125,6 +130,8 @@ A `KafkaProxyIngress` defines how clients reach the virtual cluster. It belongs 
 | `loadBalancer` | Off-cluster applications | TLS only | Yes |
 | `openShiftRoute` | Off-cluster applications (OpenShift only) | TLS only | No — hostnames assigned by OpenShift |
 
+> ℹ️ **The platform-side implementation of the off-cluster ingresses is out of scope for this guide** — provisioning the load balancer or router exposure is platform (and provider) dependent (on AWS, the cloud provider fronts the proxy with a Network Load Balancer and DNS lives in Route 53). This guide covers the in-cluster resources: the `KafkaProxyIngress` manifests below, the DNS mappings ([Step 6.9](#69--dns-for-off-cluster-ingress)), and the certificate requirements ([Step 6.8](#68--tls-certificates)); the off-cluster plumbing is up to your platform team.
+
 **clusterIP (TCP or TLS)** — uses a `ClusterIP` Service; for on-cluster clients. The ready-to-apply manifest is [`deploy/proxy/03-kafkaproxyingress.yaml`](../deploy/proxy/03-kafkaproxyingress.yaml) — two `clusterIP` ingresses with `protocol: TLS` (the proxy terminates TLS on ONE shared SNI port; SNI identifies the virtual cluster and broker).
 
 **loadBalancer (TLS only)** — uses a `LoadBalancer` Service; the proxy uses SNI to route, so every bootstrap and broker address must be unique in DNS. The `$(nodeId)` token is required in the broker pattern; `$(virtualClusterName)` may be used when sharing the ingress across virtual clusters:
@@ -161,7 +168,7 @@ spec:
 
 ## 6.5 — Define the Backend Cluster (KafkaService)
 
-The `KafkaService` describes the upstream Kafka cluster. Declare the full range of broker node IDs. The ready-to-apply manifest is [`deploy/proxy/04-kafkaservice.yaml`](../deploy/proxy/04-kafkaservice.yaml) — one `KafkaService` per backend cluster (`kafka-cluster-1` and `kafka-cluster-2`), each using explicit `bootstrapServers` (the Strimzi bootstrap Service over the `tls` listener, 9093) and `tls.trustAnchorRef` pointing at the Strimzi cluster CA Secret copied into the proxy namespace:
+The `KafkaService` describes the upstream Kafka cluster. Declare the full range of broker node IDs. The ready-to-apply manifest is [`deploy/proxy/04-kafkaservice.yaml`](../deploy/proxy/04-kafkaservice.yaml) — one `KafkaService` per backend cluster (`kafka-cluster-1` and `kafka-cluster-2`), each using explicit `bootstrapServers` (the Kafka cluster's bootstrap Service over the `tls` listener, 9093) and `tls.trustAnchorRef` pointing at the Kafka cluster CA Secret copied into the proxy namespace:
 
 ```bash
 oc apply -f deploy/proxy/04-kafkaservice.yaml
@@ -169,9 +176,9 @@ oc apply -f deploy/proxy/04-kafkaservice.yaml
 
 Field notes (full manifests in the deploy file):
 
-- `spec.bootstrapServers` — the Strimzi bootstrap Service address (`kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093`; specify either `bootstrapServers` or `strimziKafkaRef`, not both).
-- `spec.tls.trustAnchorRef` — a reference to the cluster CA bundle: `name: kafka-cluster-1-cluster-ca-cert`, `key: ca.crt`, `kind: Secret`, `storeType: PEM` (the Strimzi cluster CA Secret, copied into `kafka-proxy`).
-- **Verified live (Red Hat operator)**: the Red Hat build does **not** resolve cross-namespace `strimziKafkaRef` referents — it looks up the Strimzi `Kafka` (and its CA) in the `KafkaService`'s own namespace only and reports `ResolvedRefs=False: referenced Kafka resource not found`. Use the explicit `bootstrapServers` + copied-CA pattern above.
+- `spec.bootstrapServers` — the Kafka cluster's bootstrap Service address (`kafka-cluster-1-kafka-bootstrap.kafka-cluster-1.svc.cluster.local:9093`; specify either `bootstrapServers` or `strimziKafkaRef`, not both).
+- `spec.tls.trustAnchorRef` — a reference to the cluster CA bundle: `name: kafka-cluster-1-cluster-ca-cert`, `key: ca.crt`, `kind: Secret`, `storeType: PEM` (the Kafka cluster CA Secret, copied into `kafka-proxy`).
+- **Verified live (Red Hat operator)**: the Red Hat build does **not** resolve cross-namespace `strimziKafkaRef` referents — it looks up the `Kafka` (and its CA) in the `KafkaService`'s own namespace only and reports `ResolvedRefs=False: referenced Kafka resource not found`. Use the explicit `bootstrapServers` + copied-CA pattern above.
 - `nodeIdRanges` must cover **all** broker node IDs in the target cluster (`start` and `end` inclusive) — `0`–`2` for the cluster deployed in [Step 3](03-kafka-cluster.md#step-3-deploy-the-kafka-cluster-streams-for-apache-kafka).
 
 ## 6.6 — (Optional) Add a Filter

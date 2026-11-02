@@ -1,6 +1,6 @@
 # Demo 4: DMZ pivot attempt
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 3: Live migration / cutover](03-live-migration.md) · next: [Demo 5: Stable endpoints](05-stable-endpoints.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 3: Live migration / cutover](03-live-migration.md) · next: [Demo 5: Stable endpoints](05-stable-endpoints.md)
 
 From [Step 3.4](../03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz):
 

@@ -1,0 +1,19 @@
+# deploy/proxy/00-namespace.yaml — Step 6.1 (docs/06-proxy.md)
+# The kafka-proxy namespace, shipped declaratively like every other component
+# namespace (kafka, kafka-cluster-*, kafka-auth, kafka-http-bridge, ...). It is
+# NOT created by the proxy operator install — the OLM subscription lives in
+# openshift-operators (AllNamespaces InstallMode; a Subscription cannot create
+# namespaces) — and the proxy CRs (deploy/proxy/02–06) only reference
+# `namespace: kafka-proxy`. The Step 3.4 DMZ verification also needs it BEFORE
+# the proxy deploys (the DMZ NetworkPolicies in deploy/kafka/03-kafka-netpol-dmz.yaml
+# admit the kafka-proxy namespace on the client-facing listener ports, and the
+# "from kafka-proxy" check runs from here). Applying the deploy/proxy/ directory
+# applies this file first (00-namespace sorts before 00-proxy-operator-olm);
+# `oc new-project kafka-proxy` works too.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-proxy
+  annotations:
+    openshift.io/description: "Streams for Apache Kafka Proxy (DMZ entry point for proxied Kafka)"

@@ -1,6 +1,6 @@
 # Demo 8: Token validation on the Kafka cluster
 
-> [↑ Demo scenarios](../11-demos.md) · prev: [Demo 7: Entity isolation](07-entity-isolation.md) · next: [Demo 9: Multi-tenant virtual clusters](09-multi-tenant-virtual-clusters.md)
+> [↑ Demo scenarios](../10-demos.md) · prev: [Demo 7: Entity isolation](07-entity-isolation.md) · next: [Demo 9: Multi-tenant virtual clusters](09-multi-tenant-virtual-clusters.md)
 
 JWTs are validated **only at the Kafka cluster level** — the brokers' `oauth` listener checks each token against Keycloak's JWKS endpoint (audience, issuer, expiry) during the SASL/OAUTHBEARER exchange, and invalid tokens stop at the broker with a SASL error. With the supported Red Hat proxy build, the proxy relays the exchange unchanged (SASL Passthrough) and does not participate in validation.
 

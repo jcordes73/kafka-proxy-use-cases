@@ -1,13 +1,13 @@
 # deploy/proxy/04-kafkaservice.yaml — Step 6.5 (docs/06-proxy.md)
 # The upstream (backend) Kafka clusters from Step 3, reached over their TLS
-# listener (9093) via the Strimzi bootstrap Services. Explicit
-# `bootstrapServers` + `tls.trustAnchorRef` pointing at the Strimzi cluster
+# listener (9093) via the Kafka clusters' bootstrap Services. Explicit
+# `bootstrapServers` + `tls.trustAnchorRef` pointing at the Kafka cluster
 # CA Secrets (copied into the proxy namespace) — this is the pattern the
 # Red Hat proxy operator supports.
 #
 # WATCH SCOPE (verified live): the Red Hat operator (amq-streams-proxy
 # v3.2.2-4) does NOT resolve cross-namespace `strimziKafkaRef` referents —
-# it looks up the Strimzi Kafka (and its CA) in the KafkaService's own
+# it looks up the Kafka (and its CA) in the KafkaService's own
 # namespace only and reports `ResolvedRefs=False: referenced Kafka resource
 # not found`.
 #

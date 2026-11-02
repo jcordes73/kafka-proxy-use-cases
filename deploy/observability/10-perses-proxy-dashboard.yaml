@@ -1,0 +1,741 @@
+# deploy/observability/10-perses-proxy-dashboard.yaml — Step 1.4/1.10
+# (docs/01-user-workload-monitoring.md)
+# Perses dashboard for the Streams for Apache Kafka Proxy (KafkaProxy `simple`)
+# — the proxy's built-in Prometheus metrics, all metric names verified against
+# the live proxy (curl localhost:9190/metrics) and the Thanos catalog.
+#
+# One PersesDashboard CR in `kafka` (the Perses project where 07/09 live):
+#   kafka-proxy   proxy throughput, request mix, backpressure, buffer memory
+#
+# PER-CLUSTER + PER-POD BREAKOUT: every kroxylicious_* time-series panel
+# aggregates BY (`virtual_cluster`, `pod`) — each virtual cluster AND proxy
+# pod appears as its own legend series, and new clusters or pods are picked
+# up automatically — no dashboard edits needed. The stat panels aggregate
+# across ALL pods (totals). The `pod` variable (allow-all) narrows the
+# breakdown to specific pods; `virtual_cluster` stays as an optional filter.
+# The Netty event-loop stat is proxy-process-wide; netty_allocator_memory_used
+# breaks out by (memory_type, pod) since it carries the pod label.
+#
+# CLIENT ATTRIBUTION (verified live): NOT possible with these metrics. The
+# proxy's complete label universe is api_key / api_version / decoded /
+# node_id / virtual_cluster (+ pod, attached by the PodMonitor) — there is
+# no client/principal label, because the proxy RELAYS SASL/OAUTHBEARER
+# unchanged (auth is not terminated at the proxy; the brokers validate the
+# tokens). The finest available attribution is virtual cluster + pod +
+# API key, which is what the panels show.
+#
+# MULTI-QUERY PANELS: the Throughput, Read Pauses and Longest Pause panels
+# each carry one query per CONNECTION DIRECTION (client→proxy, proxy→client,
+# proxy→server, server→proxy). Summing strips the metric name, so Perses'
+# default legend naming shows only pod/virtual_cluster — identical legend
+# entries and identical colors for every direction. Fix (verified live):
+# every multi-series query sets PrometheusTimeSeriesQuery `seriesNameFormat`
+# — `{{direction}} — {{pod}} ({{virtual_cluster}})` on the direction panels,
+# `{{api_key}} — {{pod}} ({{virtual_cluster}})` on the request/response mix,
+# `{{memory_type}} ({{pod}})` on the Netty allocator — which makes the
+# legend explicit AND gives each distinct series its own palette color.
+# (The label_replace "direction" labels remain — seriesNameFormat reads
+# them.) On the avg-record-size ratios BOTH numerator and denominator
+# carry the same direction label (vector division requires matching label
+# sets).
+#
+# LAYOUT (verified live): THREE Grid layouts (per-section titles), following
+# the exact pattern the 09 Strimzi dashboards use — each Grid's display needs
+# a `collapse: {open: true}` block (a bare title renders with broken panel
+# positions: panels from later sections pushed under later panels), and the
+# y-coordinates CONTINUE across grids (absolute, non-overlapping): grid 1
+# y=0 Container CPU (left) + Container memory (right) — kubelet cAdvisor
+# metrics, the substitute for the JVM metrics the proxy does not expose ·
+# grid 2 y=7 stats · grid 3 y=11 throughput + avg record size, y=19
+# request/response rates by API key · grid 4 y=26 read pauses (Read Pauses
+# left, Longest Read Pause right), y=33 Pending Event-Loop Tasks (left) +
+# Netty allocator (right).
+#
+# Panels (all metric names verified live on the proxy's management port 9190):
+#   kroxylicious_client_to_proxy_request_total{api_key,...}      request rates by API key
+#   kroxylicious_proxy_to_client_response_total{api_key,...}     response rates by API key
+#   kroxylicious_*_request_size_bytes_{count,sum,max}            byte throughput distribution
+#     (also proxy_to_server / server_to_proxy / proxy_to_client variants)
+#   kroxylicious_{client_to_proxy,server_to_proxy}_reads_paused_seconds_{sum,max}
+#     backpressure: the proxy pauses reading when a downstream is saturated
+#   kroxylicious_*_active_connections / _errors_total            connection health
+#   netty_allocator_memory_used{memory_type=direct|heap}         buffer memory pressure
+#   netty_eventexecutor_tasks_pending                            event-loop saturation
+#
+# ⚠️ JVM metrics (process_cpu_usage, jvm_gc_pause_seconds) are NOT exposed by
+# the proxy's /metrics — verified live: zero process_*/jvm_* series, and the
+# downstream operator's KafkaProxy CRD (amq-streams-proxy v3.2.2) exposes no
+# metrics toggle (spec: infrastructure/network/replicas only). The dashboard
+# covers buffer/event-loop signals instead; add JVM panels if a future proxy
+# version enables them (they are already scraped from other UWM components).
+#
+# Variables: namespace / virtual_cluster / pod — all verified labels on the
+# scraped series (namespace+pod attached by the UWM stack, virtual_cluster by
+# the proxy). datasource fixed to `user-workload-monitoring` (07-*.yaml).
+# Same plugin-schema constraints as 09 (no StatChart unit 'short';
+# TimeSeriesChart visual.stack omitted for plain lines).
+#
+# Apply 07 FIRST (datasource + RBAC), then:
+#   oc apply -f deploy/observability/10-perses-proxy-dashboard.yaml
+#   oc wait --for=condition=Available -n kafka persesdashboard/kafka-proxy --timeout=180s
+---
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: kafka-proxy
+  namespace: kafka
+spec:
+  instanceSelector:
+    matchLabels:
+      app.kubernetes.io/instance: perses-observability-operator
+  config:
+    display:
+      name: Kafka Proxy
+      description: "Streams for Apache Kafka Proxy \u2014 throughput, request mix,\
+        \ backpressure and buffer memory. All metric names verified against the live\
+        \ proxy (management port 9190); queries target the user-workload-monitoring\
+        \ datasource (Thanos Querier)."
+    duration: 6h
+    refreshInterval: 1m
+    variables:
+    - kind: ListVariable
+      spec:
+        name: namespace
+        allowMultiple: false
+        allowAllValue: false
+        display:
+          name: Namespace
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: namespace
+            matchers:
+            - kroxylicious_build_info
+    - kind: ListVariable
+      spec:
+        name: virtual_cluster
+        allowMultiple: false
+        allowAllValue: true
+        display:
+          name: Virtual Cluster
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: virtual_cluster
+            matchers:
+            - kroxylicious_client_to_proxy_request_total
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: pod
+        allowMultiple: false
+        allowAllValue: true
+        display:
+          name: Proxy Pod
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: pod
+            matchers:
+            - kroxylicious_build_info
+        customAllValue: .*
+    panels:
+      '0':
+        kind: Panel
+        spec:
+          display:
+            name: Client Connections
+            description: "Active client\u2192proxy connections across all pods, per\
+              \ virtual cluster"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: decimal
+              thresholds:
+                steps:
+                - color: '#299c46'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (virtual_cluster) (kroxylicious_client_to_proxy_active_connections{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"})
+      '1':
+        kind: Panel
+        spec:
+          display:
+            name: Broker-side Connections
+            description: "Active proxy\u2192broker connections across all pods, per\
+              \ virtual cluster (should track client connections)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: decimal
+              thresholds:
+                steps:
+                - color: '#299c46'
+                  value: 0
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (virtual_cluster) (kroxylicious_proxy_to_server_active_connections{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"})
+      '2':
+        kind: Panel
+        spec:
+          display:
+            name: Client Errors
+            description: "Client\u2192proxy connection errors per second across all\
+              \ pods, per virtual cluster"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: decimal
+              thresholds:
+                steps:
+                - color: '#299c46'
+                  value: 0
+                - color: '#ed8128'
+                  value: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (virtual_cluster) (rate(kroxylicious_client_to_proxy_errors_total{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m]))
+      '3':
+        kind: Panel
+        spec:
+          display:
+            name: Pending Event-Loop Tasks
+            description: Max queued tasks across Netty event loops, all pods (saturation
+              indicator)
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              colorMode: value
+              format:
+                unit: decimal
+              thresholds:
+                steps:
+                - color: '#299c46'
+                  value: 0
+                - color: '#ed8128'
+                  value: 100
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: max(netty_eventexecutor_tasks_pending{namespace=~"$namespace",pod=~"$pod"})
+      '4':
+        kind: Panel
+        spec:
+          display:
+            name: Request Rate by API Key
+            description: Kafka requests received from clients, per pod, virtual cluster
+              and API key (PRODUCE, FETCH, METADATA, ...)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (virtual_cluster, pod, api_key) (rate(kroxylicious_client_to_proxy_request_total{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m]))
+                  seriesNameFormat: "{{api_key}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '5':
+        kind: Panel
+        spec:
+          display:
+            name: Response Rate by API Key
+            description: Kafka responses sent back to clients, per pod, virtual cluster
+              and API key
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: requests/sec
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (virtual_cluster, pod, api_key) (rate(kroxylicious_proxy_to_client_response_total{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m]))
+                  seriesNameFormat: "{{api_key}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '6':
+        kind: Panel
+        spec:
+          display:
+            name: Throughput (bytes/s)
+            description: Request and response byte throughput, both directions, per
+              pod and virtual cluster (request_size_bytes_sum / response_size_bytes_sum
+              rates)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_client_to_proxy_request_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "client_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_proxy_to_client_response_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "proxy_to_client", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_proxy_to_server_request_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "proxy_to_server", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_server_to_proxy_response_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "server_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '7':
+        kind: Panel
+        spec:
+          display:
+            name: Average Record Size
+            description: Mean record size per direction, pod and virtual cluster (request_size_bytes_sum
+              / _count rates)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_client_to_proxy_request_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "client_to_proxy", "", "") / label_replace(sum by
+                    (virtual_cluster, pod) (rate(kroxylicious_client_to_proxy_request_size_bytes_count{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "client_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_proxy_to_client_response_size_bytes_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "proxy_to_client", "", "") / label_replace(sum by
+                    (virtual_cluster, pod) (rate(kroxylicious_proxy_to_client_response_size_bytes_count{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "proxy_to_client", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '8':
+        kind: Panel
+        spec:
+          display:
+            name: Read Pauses (Backpressure)
+            description: "Time the proxy spent paused reading from clients (and from\
+              \ brokers), per pod and virtual cluster \u2014 non-zero means a downstream\
+              \ is saturated"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_client_to_proxy_reads_paused_seconds_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "client_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(sum by (virtual_cluster, pod) (rate(kroxylicious_server_to_proxy_reads_paused_seconds_sum{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}[5m])),
+                    "direction", "server_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '9':
+        kind: Panel
+        spec:
+          display:
+            name: Longest Read Pause
+            description: "Longest single read pause per pod and virtual cluster (reads_paused_seconds_max)\
+              \ \u2014 spikes indicate saturation bursts"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(max by (virtual_cluster, pod) (kroxylicious_client_to_proxy_reads_paused_seconds_max{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}),
+                    "direction", "client_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: label_replace(max by (virtual_cluster, pod) (kroxylicious_server_to_proxy_reads_paused_seconds_max{namespace=~"$namespace",virtual_cluster=~"$virtual_cluster",pod=~"$pod"}),
+                    "direction", "server_to_proxy", "", "")
+                  seriesNameFormat: "{{direction}} \u2014 {{pod}} ({{virtual_cluster}})"
+      '10':
+        kind: Panel
+        spec:
+          display:
+            name: Netty Allocator Memory
+            description: Buffer memory held by the Netty allocators, direct vs heap,
+              per pod (netty_allocator_memory_used)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum(netty_allocator_memory_used{namespace=~"$namespace",pod=~"$pod"})
+                    by (memory_type, pod)
+                  seriesNameFormat: '{{memory_type}} ({{pod}})'
+      '11':
+        kind: Panel
+        spec:
+          display:
+            name: Container CPU Usage
+            description: Proxy container CPU usage per pod (kubelet cAdvisor metrics — the proxy exposes no JVM/process metrics, verified live)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~"$namespace",pod=~"$pod",container="proxy"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '12':
+        kind: Panel
+        spec:
+          display:
+            name: Container Memory Usage
+            description: Proxy container memory usage and working set per pod (kubelet cAdvisor metrics)
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+              yAxis:
+                format:
+                  unit: bytes
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (container_memory_usage_bytes{namespace=~"$namespace",pod=~"$pod",container="proxy"})
+                  seriesNameFormat: '{{pod}} — usage'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by (pod) (container_memory_working_set_bytes{namespace=~"$namespace",pod=~"$pod",container="proxy"})
+                  seriesNameFormat: '{{pod}} — working set'
+    layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Container resources
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 0
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/11'
+        - x: 12
+          y: 0
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/12'
+    - kind: Grid
+      spec:
+        display:
+          title: Connection health
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 7
+          width: 8
+          height: 4
+          content:
+            $ref: '#/spec/panels/0'
+        - x: 8
+          y: 7
+          width: 8
+          height: 4
+          content:
+            $ref: '#/spec/panels/1'
+        - x: 16
+          y: 7
+          width: 8
+          height: 4
+          content:
+            $ref: '#/spec/panels/2'
+    - kind: Grid
+      spec:
+        display:
+          title: Throughput and request mix
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 11
+          width: 12
+          height: 8
+          content:
+            $ref: '#/spec/panels/6'
+        - x: 12
+          y: 11
+          width: 12
+          height: 8
+          content:
+            $ref: '#/spec/panels/7'
+        - x: 0
+          y: 19
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/4'
+        - x: 12
+          y: 19
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/5'
+    - kind: Grid
+      spec:
+        display:
+          title: Backpressure and buffers
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 26
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/8'
+        - x: 12
+          y: 26
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/9'
+        - x: 0
+          y: 33
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/3'
+        - x: 12
+          y: 33
+          width: 12
+          height: 7
+          content:
+            $ref: '#/spec/panels/10'

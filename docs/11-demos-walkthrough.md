@@ -1,8 +1,8 @@
-# Step 12: End-to-end demo walkthrough
+# Step 11: End-to-end demo walkthrough
 
-> [↑ Setup overview](../openshift-setup.md) · prev: [Step 11: Demo scenarios](11-demos.md)
+> [↑ Setup overview](../openshift-setup.md) · prev: [Step 10: Demo scenarios](10-demos.md)
 
-The [Demo scenarios](11-demos.md) index holds the 13 scenarios as standalone documents under [`docs/demos/`](demos). This document strings them into **one presentation** — a single arc from "one door" to "brokers can't read the data", in an order that builds, with talking points, rough timing, and the revert between acts. Per-demo detail, prerequisites, and gotchas stay in each demo's document; each section below links back to it. Demo numbers throughout refer to the **original demo numbers** (the document file names), not the renumbered tables.
+The [Demo scenarios](10-demos.md) index holds the 13 scenarios as standalone documents under [`docs/demos/`](demos). This document strings them into **one presentation** — a single arc from "one door" to "brokers can't read the data", in an order that builds, with talking points, rough timing, and the revert between acts. Per-demo detail, prerequisites, and gotchas stay in each demo's document; each section below links back to it. Demo numbers throughout refer to the **original demo numbers** (the document file names), not the renumbered tables.
 
 All commands run from the **repository root** (as in the demo scenarios doc), from a machine that resolves in-cluster DNS for the Keycloak/proxy services.
 
@@ -183,10 +183,10 @@ The same machinery, framed as DR: "lose" the source (`oc scale kafka kafka-clust
    oc wait --for=condition=Accepted=True virtualkafkacluster/kafka-cluster-1 -n kafka-proxy --timeout=120s
    ```
 
-2. Allow path: demo-client produces to `topic-A` — works. Deny path: `camel-producer`, or demo-client on any other topic — `TOPIC_AUTHORIZATION_FAILED` **before the brokers**.
+2. Allow path: demo-client produces to `topic-A` — works (⚠️ the produce must be **schema-valid** — the `record-validation` filter sits in front of Authorization, and the schema pinned by its `apicurioId` must match what you produce). Consume back with `--group demo-consumer` to prove the record reached the broker. Deny path: `camel-producer`, or demo-client on any other topic — `TOPIC_AUTHORIZATION_FAILED` **before the brokers**.
 3. **Revert.**
 
-> Talking point: `SaslInspection` derives the end-client principal from the SASL/OAUTHBEARER exchange (the token's `sub` claim) — the proxy enforces per-principal ACLs even though the brokers have no authorization configured. The filter adds checks *in addition to* the broker's own; both must allow.
+> Talking point: `SaslInspection` derives the end-client principal from the SASL/OAUTHBEARER exchange (the token's `sub` claim) — the proxy enforces per-principal ACLs even though the brokers have no authorization configured. The filter adds checks *in addition to* the broker's own; both must allow. Two gotchas (both [verified](demos/06-proxy-authorization.md)): the console consumer's default group is denied by the rules — use `--group demo-consumer` (the `demo-*` grant); and an invalid record fails with `InvalidRecordException` before ACLs are checked — keep the registry schema in sync with the filter's `apicurioId`.
 
 ### Demo 7 — entity isolation ([detail](demos/07-entity-isolation.md))
 

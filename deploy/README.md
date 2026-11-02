@@ -129,7 +129,8 @@ oc apply -f deploy/apicurio/04-netpol-dmz.yaml
 # 5.4 — register the schema (contentId feeds the Demo 2 filter): see docs/05-apicurio-registry.md
 # (writes need a Bearer token — the kafka-admin password grant in Step 5.4; anonymous reads only)
 
-# Deploy order 6 — Proxy (Step 6): operator (OLM), proxy CRs, TLS, ACLs + filters.
+# Deploy order 6 — Proxy (Step 6): namespace, operator (OLM), proxy CRs, TLS, ACLs + filters.
+oc apply -f deploy/proxy/00-namespace.yaml
 oc apply -f deploy/proxy/00-proxy-operator-olm.yaml
 oc get installplan -n openshift-operators
 oc patch installplan <name> -n openshift-operators --type merge -p '{"spec":{"approved":true}}'
@@ -251,7 +252,7 @@ Optional — **Perses dashboards** (COO + monitoring UIPlugin, Technology Previe
 
 ```bash
 oc apply -f deploy/observability/06-perses.yaml
-oc apply -f deploy/observability/07-perses-dashboards.yaml -f deploy/observability/09-perses-strimzi-dashboards.yaml
+oc apply -f deploy/observability/07-perses-dashboards.yaml -f deploy/observability/09-perses-strimzi-dashboards.yaml -f deploy/observability/10-perses-proxy-dashboard.yaml -f deploy/observability/11-keycloak-podmonitor.yaml -f deploy/observability/12-perses-keycloak-dashboards.yaml
 oc create token perses-datasource -n kafka --duration=8760h
 oc create secret generic user-workload-monitoring-secret \
   --from-literal=tokens=<token> -n kafka   # datasource proxy secret (`tokens` key)
@@ -307,8 +308,8 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/console/` | Streams for Apache Kafka Console (kafka-console): operator OLM subscription (`amq-streams-console`), `Console` CR with OIDC, metrics Services + ServiceMonitors | [8](../docs/08-console.md) |
 | `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [9](../docs/09-camel-clients.md) |
 | `deploy/observability/01–05` | Per-component monitoring integration: metrics netpols, broker/proxy/bridge PodMonitors, alerts | [1.2–1.9](../docs/01-user-workload-monitoring.md) |
-| `deploy/observability/06–07-perses*.yaml` + `09-perses-strimzi-dashboards.yaml` | Perses console dashboards (optional, Tech Preview): COO subscription + monitoring `UIPlugin`, `PersesDatasource` (UWM Thanos Querier) + `cluster-monitoring-view` RBAC, and the full Strimzi Grafana dashboard set translated to `PersesDashboard`s (kafka project) | [1.10](../docs/01-user-workload-monitoring.md#110--perses-dashboards-in-the-console-optional-technology-preview) |
-| `deploy/demos/` | Demo manifests (Step 11, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`; its filter deploys with the proxy), proxy filters (authorization, entity isolation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [11](../docs/11-demos.md) |
+| `deploy/observability/06–07-perses*.yaml` + `09-perses-strimzi-dashboards.yaml` + `10-perses-proxy-dashboard.yaml` + `11-keycloak-podmonitor.yaml` + `12-perses-keycloak-dashboards.yaml` | Perses console dashboards (optional, Tech Preview): COO subscription + monitoring `UIPlugin`, `PersesDatasource` (UWM Thanos Querier) + `cluster-monitoring-view` RBAC, the full Strimzi Grafana dashboard set translated to `PersesDashboard`s, the Kafka Proxy dashboard, and the Keycloak dashboards (kafka project) | [1.10](../docs/01-user-workload-monitoring.md#110--perses-dashboards-in-the-console-optional-technology-preview) |
+| `deploy/demos/` | Demo manifests (Step 10, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`; its filter deploys with the proxy), proxy filters (authorization, entity isolation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [10](../docs/10-demos.md) |
 
 ## Templating: `OPENSHIFT_APPS_DOMAIN`
 

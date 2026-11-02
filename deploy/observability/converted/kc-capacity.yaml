@@ -1,0 +1,354 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: kc-capacity
+  namespace: kafka
+spec:
+  instanceSelector:
+    matchLabels:
+      app.kubernetes.io/instance: perses-observability-operator
+  config:
+    display:
+      name: Keycloak capacity planning dashboard
+      description: Converted from the Keycloak Grafana dashboard (keycloak/keycloak-grafana-dashboard) to Perses. Scraped from the Red Hat build of Keycloak management port (9000, HTTPS); queries target
+        the user-workload-monitoring datasource (Thanos Querier).
+    duration: 6h
+    refreshInterval: 1m
+    variables:
+    - kind: ListVariable
+      spec:
+        name: namespace
+        allowMultiple: false
+        allowAllValue: true
+        display:
+          name: namespace
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: namespace
+            matchers:
+            - up
+        customAllValue: .*
+    - kind: ListVariable
+      spec:
+        name: realm
+        allowMultiple: true
+        allowAllValue: true
+        display:
+          name: realm
+          hidden: false
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            datasource:
+              kind: PrometheusDatasource
+              name: user-workload-monitoring
+            labelName: realm
+            matchers:
+            - keycloak_credentials_password_hashing_validations_total
+        customAllValue: .*
+    layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Panels
+          collapse:
+            open: true
+        items:
+        - x: 0
+          y: 0
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/0'
+        - x: 10
+          y: 0
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/1'
+        - x: 0
+          y: 7
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/2'
+        - x: 10
+          y: 7
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/3'
+        - x: 0
+          y: 14
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/4'
+        - x: 10
+          y: 14
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/5'
+        - x: 0
+          y: 21
+          width: 10
+          height: 7
+          content:
+            $ref: '#/spec/panels/6'
+    panels:
+      '0':
+        kind: Panel
+        spec:
+          display:
+            name: Password validations rate
+            description: Shows the number of password validations performed by Keycloak
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: irate(keycloak_credentials_password_hashing_validations_total{namespace=~"$namespace", realm=~"$realm"}[5m])
+                  seriesNameFormat: '{{pod}} => {{outcome}} - {{algorithm}}:{{hashing_strength}}'
+      '1':
+        kind: Panel
+        spec:
+          display:
+            name: Code to Token Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="code_to_token", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="code_to_token", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '2':
+        kind: Panel
+        spec:
+          display:
+            name: Client Login Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="client_login", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="client_login", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
+      '3':
+        kind: Panel
+        spec:
+          display:
+            name: Refresh Token Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="refresh_token", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="refresh_token", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+      '4':
+        kind: Panel
+        spec:
+          display:
+            name: Login Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="login", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="login", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
+      '5':
+        kind: Panel
+        spec:
+          display:
+            name: Logout Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="logout", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="logout", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
+      '6':
+        kind: Panel
+        spec:
+          display:
+            name: Token Exchange Events Rate
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+              visual:
+                areaOpacity: 0.1
+                connectNulls: false
+                display: line
+                lineWidth: 1
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="token_exchange", namespace=~"$namespace", realm=~"$realm"}[5m]))
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: user-workload-monitoring
+                  query: sum by(pod) (irate(keycloak_user_events_total{event="token_exchange", namespace=~"$namespace", realm=~"$realm", error!=""}[5m]))
+                  seriesNameFormat: '{{pod}}:{{error}}'
