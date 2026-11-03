@@ -4,7 +4,7 @@
 
 Ready-made walkthroughs for demonstrating the stack — one document per demo under [`docs/demos/`](demos). For running them as a **single presentation**, see the [end-to-end demo walkthrough](11-demos-walkthrough.md) — the demos in a building order with talking points, timing, and the revert between acts. The table below is ordered like the [Use Case Catalog](../README.md#use-case-catalog); the document file names keep the original demo numbers.
 
-Scenarios 1, 2, 6–8, 10 and 12 need **no new infrastructure** — they exercise what is already deployed (see the [setup steps](../openshift-setup.md#guide-map)). Scenarios 3, 4 and 13 apply a demo manifest from [`deploy/demos/`](../deploy/README.md) that **replaces** the `kafka-cluster-1` `VirtualKafkaCluster` wiring — revert each with `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`. Scenario 5 applies a manifest that **adds** a third virtual cluster (revert with `oc delete virtualkafkacluster/shared-cluster-1 -n kafka-proxy`), and scenario 9 replaces the running `KafkaMirrorMaker2` (same name). Scenario 11 applies a manifest that **adds** a demo topic and a Record Validation filter (revert by removing the `filterRefs` entry).
+Scenarios 1, 2, 3, 6–8, 10 and 12 need **no new infrastructure** — they exercise what is already deployed (see the [setup steps](../openshift-setup.md#guide-map)). Scenarios 4 and 13 apply a demo manifest from [`deploy/demos/`](../deploy/README.md) that **replaces** the `kafka-cluster-1` `VirtualKafkaCluster` wiring — revert each with `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`. Scenario 5 applies a manifest that **adds** a third virtual cluster (revert with `oc delete virtualkafkacluster/shared-cluster-1 -n kafka-proxy`), and scenario 9 replaces the running `KafkaMirrorMaker2` (same name). Scenario 11 applies a manifest that **adds** a demo topic and a Record Validation filter (revert by removing the `filterRefs` entry).
 
 All commands run from the **repository root**.
 
@@ -12,7 +12,7 @@ All commands run from the **repository root**.
 |---|---|---|---|
 | 1 | [§2 Stable Client Endpoints & TLS Termination](../README.md#2-stable-client-endpoints--tls-termination) | [Stable endpoints](demos/05-stable-endpoints.md) | — |
 | 2 | [§2 Stable Client Endpoints & TLS Termination](../README.md#2-stable-client-endpoints--tls-termination) | [DMZ pivot attempt](demos/04-dmz-pivot.md) | — |
-| 3 | [§3 Multi-Tenancy on a Shared Cluster](../README.md#3-multi-tenancy-on-a-shared-cluster) | [Authorization at the proxy](demos/06-proxy-authorization.md) | `deploy/demos/06-authorization-filters.yaml` |
+| 3 | [§3 Multi-Tenancy on a Shared Cluster](../README.md#3-multi-tenancy-on-a-shared-cluster) | [Authorization at the proxy](demos/06-proxy-authorization.md) | — (uses the base-platform ACLs) |
 | 4 | [§3 Multi-Tenancy on a Shared Cluster](../README.md#3-multi-tenancy-on-a-shared-cluster) | [Entity isolation (preview)](demos/07-entity-isolation.md) | `deploy/demos/07-entity-isolation.yaml` |
 | 5 | [§3 Multi-Tenancy on a Shared Cluster](../README.md#3-multi-tenancy-on-a-shared-cluster) | [Multi-tenant virtual clusters](demos/09-multi-tenant-virtual-clusters.md) | `deploy/demos/09-multi-tenant-virtual-clusters.yaml` (optional) |
 | 6 | [§4 OIDC / OAuth 2.0 Authentication](../README.md#4-oidc--oauth-20-authentication-with-red-hat-build-of-keycloak) | [Token revocation (OAuth payoff)](demos/01-token-revocation.md) | — |

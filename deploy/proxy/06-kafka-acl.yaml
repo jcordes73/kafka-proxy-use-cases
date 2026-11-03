@@ -34,29 +34,38 @@ data:
     // name and sub UUID. The sub UUIDs are realm-generated — they CHANGE when
     // the `kafka` realm is re-imported (e.g. after PostgreSQL data loss), and
     // this file must be refreshed with the new values (decode a fresh token).
-    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Topic with name like "*";
-    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Group with name like "*";
-    allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * TransactionalId with name like "*";
+    allow User with name in {"service-account-kafka-bridge", "d7cf86c9-0f0d-4f11-b98e-697841287a36", "service-account-kafka-console-kafka", "6711fb34-b1a1-47a1-ac8b-851780a0e2b", "kafka-admin"} to * Topic with name like "*";
+    allow User with name in {"service-account-kafka-bridge", "d7cf86c9-0f0d-4f11-b98e-697841287a36", "service-account-kafka-console-kafka", "6711fb34-b1a1-47a1-ac8b-851780a0e2b", "kafka-admin"} to * Group with name like "*";
+    allow User with name in {"service-account-kafka-bridge", "d7cf86c9-0f0d-4f11-b98e-697841287a36", "service-account-kafka-console-kafka", "6711fb34-b1a1-47a1-ac8b-851780a0e2b", "kafka-admin"} to * TransactionalId with name like "*";
 
     // Camel clients — least privilege (Step 9 routes, topic-A). DESCRIBE is
     // required: the producer/consumer fetch Metadata for the topic before
     // producing/consuming (verified live, fixed: WRITE-only denied the
     // Metadata fetch with TOPIC_AUTHORIZATION_FAILED).
-    allow User with name = "service-account-camel-producer" to {WRITE, DESCRIBE} Topic with name = "topic-A";
-    allow User with name = "service-account-camel-consumer" to {READ, DESCRIBE} Topic with name = "topic-A";
-    allow User with name = "service-account-camel-consumer" to READ Group with name = "camel-consumer";
+    allow User with name in {"service-account-camel-producer", "368665fd-b9e9-475e-8a5f-1cce06b6f998"} to {WRITE, DESCRIBE} Topic with name = "topic-A";
+    allow User with name in {"service-account-camel-consumer", "84f7a5b2-d3e8-46f5-abaf-7a68c08dea32"} to {READ, DESCRIBE} Topic with name = "topic-A";
+    allow User with name in {"service-account-camel-consumer", "84f7a5b2-d3e8-46f5-abaf-7a68c08dea32"} to READ Group with name = "camel-consumer";
 
     // Demo data-path users (Keycloak password users, Step 2.4) — READ on a
     // topic also requires a Group READ (consumers join a group), so each user
-    // gets a scoped consumer-group ACL alongside its topic grant.
-    allow User with name in {"kafka-user-a", "kafka-user-b"} to READ Topic with name = "topic-A";
-    allow User with name = "kafka-user-a" to WRITE Topic with name = "topic-A";
-    allow User with name = "kafka-user-a" to READ Group with name = "kafka-user-a-group";
-    allow User with name = "kafka-user-b" to READ Group with name = "kafka-user-b-group";
-    allow User with name = "kafka-user-c" to {READ, WRITE} Topic with name = "topic-C";
-    allow User with name = "kafka-user-c" to READ Group with name = "kafka-user-c-group";
+    // gets a scoped consumer-group ACL alongside its topic grant. DESCRIBE is
+    // required alongside READ/WRITE (verified live: producers and consumers
+    // fetch Metadata for the topic first — without it every request is denied
+    // with TOPIC_AUTHORIZATION_FAILED). SaslInspection derives the principal
+    // from the JWT `sub` claim — now present on password-grant user tokens too
+    // (the `basic` scope's sub mapper) — so each user is granted by BOTH name
+    // and sub UUID (user-a: 7a697d11-9bc3-45a5-a4c0-b741c8a0d540,
+    // user-b: b7cf8efb-ebaf-42f8-a836-5dd7377a5f9b,
+    // user-c: 7ad906f1-b049-4de3-8be2-3ac4b14c9107).
+    allow User with name in {"kafka-user-a", "7a697d11-9bc3-45a5-a4c0-b741c8a0d540"} to {READ, WRITE, DESCRIBE} Topic with name = "topic-A";
+    allow User with name in {"kafka-user-b", "b7cf8efb-ebaf-42f8-a836-5dd7377a5f9b"} to {READ, DESCRIBE} Topic with name = "topic-A";
+    allow User with name in {"kafka-user-a", "7a697d11-9bc3-45a5-a4c0-b741c8a0d540"} to READ Group with name = "kafka-user-a-group";
+    allow User with name in {"kafka-user-b", "b7cf8efb-ebaf-42f8-a836-5dd7377a5f9b"} to READ Group with name = "kafka-user-b-group";
+    allow User with name in {"kafka-user-c", "7ad906f1-b049-4de3-8be2-3ac4b14c9107"} to {READ, WRITE, DESCRIBE} Topic with name = "topic-C";
+    allow User with name in {"kafka-user-c", "7ad906f1-b049-4de3-8be2-3ac4b14c9107"} to READ Group with name = "kafka-user-c-group";
 
     otherwise deny;
+---
 apiVersion: kroxylicious.io/v1alpha1
 kind: KafkaProtocolFilter
 metadata:
