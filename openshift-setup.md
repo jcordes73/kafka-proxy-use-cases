@@ -10,7 +10,7 @@ Step-by-step instructions for deploying the full stack from the command line usi
 By the end of this guide, the stack looks like this — the **proxy and HTTP Bridge in the DMZ** as the clusters' doors, the **Kafka clusters and the optional MirrorMaker 2 replication plane in the secure backend** (Step 4):
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"},"flowchart":{"curve":"basis","nodeSpacing":45,"rankSpacing":55,"padding":10}}}%%
 flowchart TB
     clients["Kafka clients (native)"]
     http["HTTP clients"]
@@ -19,7 +19,7 @@ flowchart TB
     subgraph openshift["OpenShift cluster — logical separation via namespaces"]
         subgraph dmz["DMZ — client-facing entry points"]
             subgraph authNs["namespace: kafka-auth"]
-                keycloak["Red Hat build of Keycloak — realm 'kafka'<br/>service-account clients for the data path<br/>+ kafka-console client (OIDC login)"]
+                keycloak["🔐 Red Hat build of Keycloak — realm 'kafka'<br/>service-account clients for the data path<br/>+ kafka-console client (OIDC login)"]
             end
             subgraph proxyNs["namespace: kafka-proxy"]
                 proxy["Proxy operator<br/>Virtual clusters 'kafka-cluster-1'/'kafka-cluster-2'<br/>clusterIP bootstraps :9292"]
@@ -27,9 +27,6 @@ flowchart TB
             subgraph bridgeNs["namespace: kafka-http-bridge (exposed HTTP API, locked down)"]
                 bridge["KafkaBridge<br/>(bootstrapServers → the proxy)<br/>REST API /topics · /consumers<br/>(+ API gateway, optional)"]
             end
-        end
-        subgraph authNs["namespace: kafka-auth"]
-            keycloak["Red Hat build of Keycloak — realm 'kafka'<br/>service-account clients for the data path<br/>+ kafka-console client (OIDC login)"]
         end
         subgraph clientsSec["Clients — DMZ workloads"]
             producer["Camel producer route<br/>(timer → kafka:topic-A)"]
@@ -76,17 +73,19 @@ flowchart TB
     console ~~~ producer
     keycloak ~~~ consumer
 
-    style kafkaNs1 fill:#FFFFFF,stroke:#4D4D4D
-    style kafkaNs2 fill:#FFFFFF,stroke:#4D4D4D
+    style kafkaNs1 fill:#F7F7F7,stroke:#4D4D4D
+    style kafkaNs2 fill:#F7F7F7,stroke:#4D4D4D
     style bridgeNs fill:#FFFFFF,stroke:#EE0000
-    style authNs fill:#ECE6FF,stroke:#5E40BE
     style proxyNs fill:#FFFFFF,stroke:#EE0000
     style consoleNs fill:#FFFFFF,stroke:#0066CC
-    style registryNs fill:#FFFFFF,stroke:#4D4D4D
-    style mm2Ns fill:#DAF2F2,stroke:#37A3A3
-    style dmz fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
-    style backend fill:#F2F2F2,stroke:#4D4D4D
+    style registryNs fill:#F7F7F7,stroke:#4D4D4D
+    style dmz fill:#FDECEC,stroke:#EE0000,stroke-width:2px
+    style backend fill:#FFFFFF,stroke:#4D4D4D
+
     style clientsSec fill:#E0F0FF,stroke:#0066CC,stroke-width:2px
+    style authNs fill:#ECE6FF,stroke:#5E40BE
+    style mm2Ns fill:#DAF2F2,stroke:#37A3A3
+linkStyle 7,8 stroke:#EE0000,stroke-width:2px
 ```
 
 Each namespace is a **logical isolation boundary**: its own RBAC, service accounts, and NetworkPolicies. The diagram groups the namespaces into two zones: the **DMZ** (Red Hat Red tint — brand red highlights the important part: the client-facing entry points) holds the `kafka-proxy` namespace (the proxy, the single client-facing door to the brokers), the `kafka-http-bridge` namespace (the exposed HTTP API, also a client of the proxy, locked down by its own NetworkPolicy — [Step 7.5](docs/07-http-bridge.md#75--restrict-http-access-to-the-bridge-dmz-networkpolicy)), and the `kafka-auth` namespace (purple, Keycloak — the identity provider is DMZ-resident because it issues the tokens the DMZ workloads and browser users fetch, and it is exposed off-cluster via its own Ingress). The **secure backend** (neutral gray) holds the Kafka clusters — the `kafka-cluster-1` and `kafka-cluster-2` namespaces, sealed off with no ingress except the DMZ proxy (plus the optional `kafka-mm2` replication plane on the plain listener, teal) — and the `kafka-registry` namespace, Apicurio Registry, reachable only by the proxy on the REST port ([Step 5.3](docs/05-apicurio-registry.md#53--lock-down-the-registry-network)) — and the `kafka-console` namespace (blue), the OIDC-secured client-facing UI, which also resides in the secure backend (it is only reachable in-cluster, not exposed off-cluster like the DMZ entry points). Outside the two zones: the Camel client workloads are in their own namespaces (`kafka-producer` and `kafka-consumer`, blue), and `kafka-auth` (purple) holds the identity provider — MirrorMaker 2 replicates between the backend clusters ([Step 4](docs/04-mirrormaker2.md#step-4-mirrormaker-2-between-the-two-clusters-optional)). Everything runs on a single OpenShift cluster, managed by the `oc` commands in this guide.
@@ -148,22 +147,25 @@ oc apply -f deploy/proxy/00-namespace.yaml
 
 The guide is split into one document per component under [`docs/`](docs). The step
 numbering (**1–10**) matches the **deployment order** (step 11 is the demo
-walkthrough, not a deployment step), and each component's first
-manifest creates its namespace:
+walkthrough and step 12 the cleanup — neither is a deployment step), and each component's first
+manifest creates its namespace. The first column is a checklist — tick each
+step off as you complete it (every step was deployed and verified live on the
+cluster this guide was built against):
 
-| Step | Document | Component | Notes |
+| Done | Step | Document | Component |
 |---|---|---|---|
-| [1](docs/01-user-workload-monitoring.md) | [User-workload monitoring](docs/01-user-workload-monitoring.md) | OpenShift user-workload monitoring — [1.1](docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) enables the stack (deployed **first**; cluster-admin, once), [1.2–1.10](docs/01-user-workload-monitoring.md#12--allow-the-monitoring-stack-into-the-locked-down-namespaces) is the per-component integration (netpols, PodMonitors, console metrics source, alert rules, optional Perses dashboards — deployed after those components exist) | deployed first and last |
-| [2](docs/02-keycloak.md) | [Keycloak](docs/02-keycloak.md) | Red Hat build of Keycloak — OIDC authorization server (`kafka-auth`) | |
-| [3](docs/03-kafka-cluster.md) | [Deploy the Kafka cluster](docs/03-kafka-cluster.md) | Streams for Apache Kafka cluster (secure backend) + backend lockdown NetworkPolicies; per-principal quotas ([3.5](docs/03-kafka-cluster.md#35--quotas-per-principal-broker-enforced)) | |
-| [4](docs/04-mirrormaker2.md) | [MirrorMaker 2](docs/04-mirrormaker2.md) | Replication between the two clusters (optional) | |
-| [5](docs/05-apicurio-registry.md) | [Apicurio Registry](docs/05-apicurio-registry.md) | Registry operator, dev PostgreSQL, `ApicurioRegistry3`, schema registration (5.1–5.4) | |
-| [6](docs/06-proxy.md) | [Proxy](docs/06-proxy.md) | Streams for Apache Kafka Proxy — operator, virtual cluster, ingress, TLS, DNS (subsections 6.1–6.10) | |
-| [7](docs/07-http-bridge.md) | [HTTP Bridge](docs/07-http-bridge.md) | Kafka HTTP Bridge as DMZ client (connects through the proxy) | |
-| [8](docs/08-console.md) | [Console](docs/08-console.md) | Streams for Apache Kafka Console UI (connects through the proxy, OIDC via Keycloak) | |
-| [9](docs/09-camel-clients.md) | [Camel clients](docs/09-camel-clients.md) | Camel Quarkus producer/consumer | |
-| [10](docs/10-demos.md) | [Demo scenarios](docs/10-demos.md) | 13 ready-made demos — including the Record Validation demo (Demo 2: topic + filter wiring, optional) | |
-| [11](docs/11-demos-walkthrough.md) | [End-to-end demo walkthrough](docs/11-demos-walkthrough.md) | The demos as one presentation — arc, talking points, timing, and reverts between acts | |
+| ☐ | [1](docs/01-user-workload-monitoring.md) | [User-workload monitoring](docs/01-user-workload-monitoring.md) | OpenShift user-workload monitoring — [1.1](docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) enables the stack (deploy **first**; cluster-admin, once), [1.2–1.10](docs/01-user-workload-monitoring.md#12--allow-the-monitoring-stack-into-the-locked-down-namespaces) is the per-component integration (netpols, PodMonitors, console metrics source, alert rules, optional Perses dashboards — deploy after those components exist) |
+| ☐ | [2](docs/02-keycloak.md) | [Keycloak](docs/02-keycloak.md) | Red Hat build of Keycloak — OIDC authorization server (`kafka-auth`), PostgreSQL (persistent via `volumeClaimTemplate`) |
+| ☐ | [3](docs/03-kafka-cluster.md) | [Deploy the Kafka cluster](docs/03-kafka-cluster.md) | Streams for Apache Kafka cluster (secure backend) + backend lockdown NetworkPolicies; per-principal quotas ([3.5](docs/03-kafka-cluster.md#35--quotas-per-principal-broker-enforced)) |
+| ☐ | [4](docs/04-mirrormaker2.md) | [MirrorMaker 2](docs/04-mirrormaker2.md) | Replication between the two clusters (optional) |
+| ☐ | [5](docs/05-apicurio-registry.md) | [Apicurio Registry](docs/05-apicurio-registry.md) | Registry operator, PostgreSQL (persistent via `volumeClaimTemplate`), `ApicurioRegistry3`, schema registration (5.1–5.4) |
+| ☐ | [6](docs/06-proxy.md) | [Proxy](docs/06-proxy.md) | Streams for Apache Kafka Proxy — operator, virtual cluster, ingress, TLS, DNS (subsections 6.1–6.10) |
+| ☐ | [7](docs/07-http-bridge.md) | [HTTP Bridge](docs/07-http-bridge.md) | Kafka HTTP Bridge as DMZ client (connects through the proxy) |
+| ☐ | [8](docs/08-console.md) | [Console](docs/08-console.md) | Streams for Apache Kafka Console UI (connects through the proxy, OIDC via Keycloak) |
+| ☐ | [9](docs/09-camel-clients.md) | [Camel clients](docs/09-camel-clients.md) | Camel Quarkus producer/consumer |
+| ☐ | [10](docs/10-demos.md) | [Demo scenarios](docs/10-demos.md) | 13 ready-made demos — including the Record Validation demo (Demo 2: topic + filter wiring, optional) |
+| ☐ | [11](docs/11-demos-walkthrough.md) | [End-to-end demo walkthrough](docs/11-demos-walkthrough.md) | The demos as one presentation — arc, talking points, timing, and reverts between acts |
+| ☐ | [12](docs/12-cleanup.md) | [Clean up (teardown)](docs/12-cleanup.md) | Full teardown in reverse deployment order — workloads → proxy → Registry → MM2 → Kafka (PVCs survive, `deleteClaim: false`) → Keycloak → operators → namespaces → monitoring config |
 
 Troubleshooting tips covering the whole stack are at the [end of this document](#troubleshooting-tips).
 
@@ -175,6 +177,14 @@ Troubleshooting tips covering the whole stack are at the [end of this document](
 > - **Console OIDC: the realm must provide a `groups` client scope** (verified live, fixed by adding it — the Red Hat console docs don't call this out): the console's OIDC flow requests scopes **`openid email profile groups`** at the token exchange, and without a `groups` client scope in the realm the exchange fails with `Invalid scopes` (`OAUTH_CALLBACK_ERROR` in the console-ui logs) and the login **redirect-loops** between `/api/auth/signin` and Keycloak. Fix: a `groups` client scope with a Group Membership mapper, attached as a default client scope on the `kafka-console` client ([Step 8.3](docs/08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc), [deploy/keycloak/04-kafka-realm-import.yaml](deploy/keycloak/04-kafka-realm-import.yaml)).
 > - **Console Kafka connection: client credentials must be in `sasl.jaas.config`** (verified live): Kafka 4.x's client-side `OAuthBearerLoginCallbackHandler` reads `clientId`/`clientSecret` from the **JAAS options only** — the flat `sasl.oauthbearer.client.credentials.client.id`/`.secret` properties are ignored ("The OAuth configuration option clientId value must be non-null"), and the console's `AdminClient` then retries connections silently until every call ends in "Timed out waiting for a node assignment" → **HTTP 504 on every Kafka page**. Put the credentials in the JAAS options ([Step 8.2](docs/08-console.md#82--deploy-the-console-connected-to-the-virtual-cluster), [deploy/console/02-kafka-console.yaml](deploy/console/02-kafka-console.yaml)).
 > - **Console Kafka connection: `security.protocol: SASL_SSL` must be set explicitly per cluster entry** (verified live): without it the Kafka client defaults to **PLAINTEXT**, and against the proxy's TLS-only virtual-cluster ingress (9292) the plaintext ClientHello is rejected — connections fail silently (no console-api log lines, zero established sockets) and every Admin call ends in the same 504 timeout. The physical-cluster entries need it too; the Red Hat console docs' examples do not call out the per-entry requirement ([Step 8.2](docs/08-console.md#82--deploy-the-console-connected-to-the-virtual-cluster)).
+> - **Keycloak realm loss: PostgreSQL had no persistent storage** (verified live after a sandbox restart; **since fixed**): the `postgresql-db-0` StatefulSet in `kafka-auth` originally had no `volumeClaimTemplates`, so the realm lived in ephemeral storage and was **wiped whenever the pod was recreated** (node reboot, sandbox restart). The `KeycloakRealmImport` CR reports `Done=True` and will **not** re-run — recover by re-applying it: `envsubst < deploy/keycloak/04-kafka-realm-import.yaml | oc apply -f -` (delete + re-apply forces the operator to start a new import job; ~20s). While the realm is gone, the brokers, Bridge, and Camel clients crash-loop on `404 {"error":"Realm does not exist"}` from the JWKS/token endpoints ([Step 2.4](docs/02-keycloak.md#24--create-the-kafka-realm-and-the-console-client)). The DB now persists via a `volumeClaimTemplate` — migrated live with a `pg_dump`/`pg_restore` cycle; the realm, clients, and service-account `sub` UUIDs (and therefore the proxy ACL rules) all survived unchanged ([Step 2.2](docs/02-keycloak.md#22--provision-a-database-postgresql-persisted)).
+> - **An operator-imported realm has NO built-in default client scopes** (verified live, fixed in the manifest): a realm created purely by the KeycloakRealmImport CR starts with an **empty** `defaultDefaultClientScopes` list — client-credential tokens then carry **no `scope` claim and no `sub`/`preferred_username`**, and Kafka's native OAuth login module rejects them at login with `LoginException: scope value must be non-empty`. The browser flow breaks too: the Console's NextAuth requests `openid email profile groups`, and without an `email` scope in the realm Keycloak rejects the callback with **`Invalid scopes: openid email profile groups`**, looping the console login back to the sign-in page forever. The realm import manifest now defines `basic` (`oidc-sub-mapper`), `profile`, `roles`, and `email` client scopes plus realm `defaultDefaultClientScopes`, and lists them explicitly on the `kafka-console` client (realm defaults do **not** back-fill existing clients). For a live realm without them, add the scopes via the Keycloak admin API and assign them to each client ([Step 2.4](docs/02-keycloak.md#24--create-the-kafka-realm-and-the-console-client)).
+> - **The proxy's SaslInspection filter derives the principal from the JWT `sub` claim (a UUID)** — so the proxy ACL rules grant service-account clients by **both name and sub UUID** ([Step 6.5](docs/06-proxy.md#acls-on-the-proxy-layer-as-deployed-here), [deploy/proxy/06-kafka-acl.yaml](deploy/proxy/06-kafka-acl.yaml)). The `sub` UUIDs are **realm-generated and change whenever the `kafka` realm is re-imported** — stale UUIDs make every client hit `otherwise deny` (`TopicAuthorizationException`), so refresh the `kafka-acl-rules` ConfigMap with the new UUIDs (decode a fresh token for each client) after a realm re-import.
+> - **A producer needs `DESCRIBE` alongside `WRITE`** (verified live, fixed): the Kafka producer fetches **Metadata** for the topic before producing, and the Metadata fetch is authorized like any other operation — a `WRITE`-only ACL denies it with `TOPIC_AUTHORIZATION_FAILED`. Grant `{WRITE, DESCRIBE}` (and `{READ, DESCRIBE}` for consumers) ([deploy/proxy/06-kafka-acl.yaml](deploy/proxy/06-kafka-acl.yaml)).
+> - **`envsubst` with an unset variable silently breaks the realm's redirect URIs** (verified live after a sandbox restart): the realm import manifest embeds `https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*` — applying it with `envsubst` **without** `deploy/env.sh` sourced replaces the unset variable with an **empty string**, storing `https://kafka-console./*` as the redirect URI and web origin of `kafka-console` (and `registry-ui`). The import reports `Done=True` and the browser login then fails with **`Invalid parameter: redirect_uri`**. Fix via the Keycloak admin API — a targeted PUT of the two clients' `redirectUris`/`webOrigins` (do **not** delete + re-import the realm: that regenerates the service-account `sub` UUIDs and breaks the proxy ACLs). Guard against recurrence: `source deploy/env.sh` before `envsubst` ([Step 2.4](docs/02-keycloak.md#24--create-the-kafka-realm-and-the-console-client)).
+> - **A polling authorization error terminates the Camel consumer route permanently** (verified live): the camel-consumer logged one `TopicAuthorizationException` during proxy/ACL churn, Camel's `BridgeErrorStrategy` terminated the KafkaConsumer thread, and the pod then sat **idle with no log output** (Running 1/1, no restarts, no errors — easy to mistake for healthy). Recover by deleting the pod: `oc -n kafka-consumer delete pod <pod>` — the route re-starts and consumption resumes.
+> - **The record-validation filter's pinned `apicurioId` can go stale**: the filter resolves the schema by its **`contentId`** (not the `globalId` — verified live: after a delete + re-register cycle the old `globalId` answered 404 while the filter still resolved schemas via the `contentId`) — if artifacts are re-uploaded (or the registry's data is rebuilt), the pinned `contentId` may point at a different artifact (e.g. an Avro schema instead of the JSON schema) and every produce is rejected with `InvalidRecordException: Value was invalid: ... unknown expected`. Verify the pinned `contentId` matches the intended schema (`GET /apis/registry/v3/ids/contentIds/<id>`) and update the filter ([Demo scenarios, Demo 2](docs/demos/02-record-validation.md)).
+> - **Artifact deletion is disabled by default in Registry 3** (verified live): the registry's DELETE answers 405 *"Artifact deletion operation is not enabled"* until the `ApicurioRegistry3` resource sets `spec.app.env` → `APICURIO_REST_DELETION_ARTIFACT_ENABLED: "true"` (property `apicurio.rest.deletion.artifact.enabled`; the older-looking `REGISTRY_REST_ARTIFACT_DELETION_ENABLED` env name has no effect on the Red Hat build — the 405 persisted until the correct name was set). Writes also require a Bearer token with `sr-admin` fetched from the **external** `https` Keycloak issuer (see [Step 5.4](docs/05-apicurio-registry.md#54--register-a-schema)).
 
 ---
 

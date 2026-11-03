@@ -10,7 +10,7 @@ oc apply -f deploy/observability/00-cluster-monitoring-config.yaml
 oc -n openshift-user-workload-monitoring wait --for=create pod/prometheus-user-workload-0 --timeout=300s
 oc -n openshift-user-workload-monitoring wait --for=condition=Ready pod/prometheus-user-workload-0 --timeout=600s
 
-# Deploy order 2 — Keycloak (operator first, then dev PostgreSQL, then keycloak, realm import).
+# Deploy order 2 — Keycloak (operator first, then persistent PostgreSQL (volumeClaimTemplate), then keycloak, realm import).
 # The kafka-auth namespace does not exist yet on a fresh cluster — create it from its manifest
 # BEFORE the Secrets, or the Secret creates fail with `namespaces "kafka-auth" not found`
 # (verified live; applying the deploy/keycloak/ directory later is idempotent):
@@ -46,6 +46,7 @@ oc -n kafka-auth wait --for=jsonpath='{.status.phase}'=Succeeded csv --all --tim
 # valid URI". Delete the CR + its failed Job and re-apply through envsubst:
 oc -n kafka-auth delete keycloakrealmimport kafka-realm-import --ignore-not-found
 oc -n kafka-auth delete job kafka-realm-import --ignore-not-found
+source deploy/env.sh   # exports OPENSHIFT_APPS_DOMAIN — envsubst with it unset silently breaks the realm's redirect URIs
 envsubst < deploy/keycloak/04-kafka-realm-import.yaml | oc apply -f -
 oc -n kafka-auth wait --for=create job --all --timeout=300s
 oc -n kafka-auth wait --for=condition=Complete job --all --timeout=300s
@@ -82,7 +83,7 @@ oc apply -f deploy/kafka/03-topics.yaml    # demo topics (topic-A/B/C) — clien
 oc apply -f deploy/mirrormaker2/01-mirrormaker2.yaml
 oc -n kafka-mm2 wait --for=condition=Ready kafkamirrormaker2/kafka-cluster-1-to-2 --timeout=900s
 
-# Deploy order 5 — Apicurio Registry (Steps 5.1–5.4): operator, dev PostgreSQL, registry, schema.
+# Deploy order 5 — Apicurio Registry (Steps 5.1–5.4): operator, persistent PostgreSQL (volumeClaimTemplate), registry, schema.
 # The registry CR (03-registry.yaml) embeds Routes + Keycloak auth — apply through envsubst.
 # The OIDC truststore (keycloak-oidc-truststore) must be built with keytool from the
 # Keycloak cert — an openssl-generated p12 loads with 0 entries in the JVM (Step 5.2).
@@ -299,10 +300,10 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | Directory | Component | Guide step (= deploy order) |
 |---|---|---|
 | `deploy/observability/00-cluster-monitoring-config.yaml` | User-workload monitoring stack enablement (`enableUserWorkload`, cluster-admin, once) | [1.1](../docs/01-user-workload-monitoring.md#11--enable-monitoring-for-user-defined-projects-deploy-this-first-cluster-admin-once) |
-| `deploy/keycloak/` | Red Hat build of Keycloak (kafka-auth namespace): operator subscription, dev PostgreSQL, `keycloak`, in-cluster http Service (`keycloak-http`), `kafka` realm import (console OIDC client + data-path service-account clients) | [2](../docs/02-keycloak.md) |
+| `deploy/keycloak/` | Red Hat build of Keycloak (kafka-auth namespace): operator subscription, persistent PostgreSQL (volumeClaimTemplate), `keycloak`, in-cluster http Service (`keycloak-http`), `kafka` realm import (console OIDC client + data-path service-account clients) | [2](../docs/02-keycloak.md) |
 | `deploy/kafka/` | Streams for Apache Kafka operator (OLM) + Kafka cluster (OAUTHBEARER-only tls listener) | [3](../docs/03-kafka-cluster.md) |
 | `deploy/mirrormaker2/` | MirrorMaker 2 replication between the two backend clusters (secure backend; optional; replicates as soon as both clusters are up) | [4](../docs/04-mirrormaker2.md) |
-| `deploy/apicurio/01–04` | Red Hat build of Apicurio Registry 3 (operator subscription, dev PostgreSQL, `ApicurioRegistry3`, DMZ netpols) + schema registration | [5.1–5.4](../docs/05-apicurio-registry.md) |
+| `deploy/apicurio/01–04` | Red Hat build of Apicurio Registry 3 (operator subscription, persistent PostgreSQL, `ApicurioRegistry3`, DMZ netpols) + schema registration | [5.1–5.4](../docs/05-apicurio-registry.md) |
 | `deploy/proxy/` | KafkaProxy, ingress, KafkaService, VirtualKafkaCluster (kafka-proxy namespace) | [6](../docs/06-proxy.md) |
 | `deploy/bridge/` | Kafka HTTP Bridge (DMZ client) + DMZ NetworkPolicies (kafka-http-bridge); connects through the proxy | [7](../docs/07-http-bridge.md) |
 | `deploy/console/` | Streams for Apache Kafka Console (kafka-console): operator OLM subscription (`amq-streams-console`), `Console` CR with OIDC, metrics Services + ServiceMonitors | [8](../docs/08-console.md) |
@@ -372,3 +373,7 @@ Placeholders in manifest files:
 - `<KEYCLOAK_HOST>` — the externally reachable hostname of the `keycloak` Keycloak route (filled in after [Step 2.3](../docs/02-keycloak.md#23--tls-certificate-and-keycloak-deployment) — see [openshift-setup.md, Step 2](../docs/02-keycloak.md#step-2-install-red-hat-build-of-keycloak-kafka-auth-namespace)). Derived as `keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}`; used by the console OIDC configuration.
 
 Secrets (Keycloak TLS material, the console OIDC client secret) are created with `oc create` commands from the guide — they are deliberately NOT in git.
+
+## Teardown
+
+To remove the whole stack, follow [Step 12: Clean up](../docs/12-cleanup.md) — the deployment order in reverse (workloads first, infrastructure last), with the two ordering rules that matter: delete custom resources **before** their operators (finalizers) and **before** their namespaces, and note that the Kafka broker PVCs survive by design (`deleteClaim: false`, [Step 3.2](../docs/03-kafka-cluster.md#32--create-the-kafka-cluster)).

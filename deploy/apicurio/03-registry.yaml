@@ -28,6 +28,15 @@ spec:
         route.openshift.io/termination: edge
     networkPolicy:
       enabled: false
+    # Artifact deletion is disabled by default in Registry 3 (DELETE answers 405
+    # "Artifact deletion operation is not enabled"). Enable it so Step 5.4's
+    # schema re-registration is repeatable (delete + POST). Property:
+    # apicurio.rest.deletion.artifact.enabled → env APICURIO_REST_DELETION_ARTIFACT_ENABLED.
+    # Note the env name: the older REGISTRY_REST_ARTIFACT_DELETION_ENABLED has no
+    # effect on the Red Hat build (verified live — 405 persisted until this name).
+    env:
+      - name: APICURIO_REST_DELETION_ARTIFACT_ENABLED
+        value: "true"
     auth:
       enabled: true
       authServerUrl: https://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}/realms/kafka

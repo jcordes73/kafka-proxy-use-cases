@@ -9,7 +9,7 @@ With two Kafka clusters deployed (Steps [0.2](03-kafka-cluster.md#32--create-the
 MM2 sits in the **secure backend** (`kafka-mm2`) — it is replication traffic between the backend clusters, never client-facing. Deployed via the Streams for Apache Kafka operator as a `KafkaMirrorMaker2` resource in its own **`kafka-mm2` namespace**, it connects **directly to both clusters' `plain` listeners** (9092) — unauthenticated and unencrypted, so no OAuth credentials or TLS trust are needed for the replication plane. It does *not* route through the proxy virtual clusters.
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"}}}%%
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"},"flowchart":{"curve":"basis","nodeSpacing":45,"rankSpacing":55,"padding":10}}}%%
 flowchart LR
     subgraph sourceNs["namespace: kafka-cluster-1 — secure backend (source)"]
         K1["Kafka cluster-1<br/>plain 9092 · tls 9093 (OAUTHBEARER)"]
@@ -26,10 +26,13 @@ flowchart LR
     MM2 -- "write target (plain 9092,<br/>backend allowance, no auth)" --> K2
     P -. "application clients produce via the proxy<br/>(SASL/OAUTHBEARER, tls 9093)" .-> K1
 
-    style K1 fill:#F2F2F2,stroke:#4D4D4D
-    style K2 fill:#F2F2F2,stroke:#4D4D4D
-    style MM2 fill:#DAF2F2,stroke:#37A3A3
-    style P fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+classDef red fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+classDef gray fill:#F2F2F2,stroke:#4D4D4D
+classDef teal fill:#DAF2F2,stroke:#37A3A3
+class P red
+class K1,K2 gray
+class MM2 teal
+linkStyle 0,1 stroke:#EE0000,stroke-width:2px
 ```
 
 > **Security note:** the `plain` listener is unauthenticated and unencrypted — the trade-off is deliberate dev simplicity (no Keycloak client, no CA copies). If you want the replication plane authenticated instead, point MM2 at the `tls` listeners (9093), which requires SASL/OAUTHBEARER via the `custom` authentication type with the `mm2` Keycloak service-account client, plus each cluster's CA copied into `kafka-mm2` (see [Step 3.2](03-kafka-cluster.md#32--create-the-kafka-cluster) and [Step 2.5](02-keycloak.md#25--client-authentication-at-the-proxy) — the v1 API change reference [31.7.4](https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/3.2/html-single/deploying_and_managing_streams_for_apache_kafka_on_openshift/index#kafkamirrormaker2) documents `oauth` → `type: custom`). The DMZ NetworkPolicy allowance must then move to port 9093.

@@ -2,6 +2,11 @@
 # Creates the `kafka` realm for the platform's OIDC consumers. Client secrets
 # are inline for dev simplicity — do not commit rotated/real secrets this way.
 #
+# IMPORTANT: source deploy/env.sh before envsubst — the redirect URIs below
+# embed ${OPENSHIFT_APPS_DOMAIN}, and envsubst replaces an UNSET variable with
+# an empty string (verified live: the console login then fails with
+# "Invalid parameter: redirect_uri").
+#
 # Keycloak IS wired to the Kafka data path: the tls listener (9093) requires
 # SASL/OAUTHBEARER (Step 3.2, deploy/kafka/02-kafka.yaml) — the service-account
 # clients below are the data-path credentials. Each workload obtains tokens
@@ -63,6 +68,112 @@ spec:
               access.token.claim: "true"
               userinfo.token.claim: "true"
               claim.name: groups
+      # Basic client scope — provides the `sub` claim (verified live, fixed:
+      # a realm created purely by operator import has NO built-in default
+      # client scopes, so tokens carry no `sub` — and the proxy's
+      # SaslInspection filter derives the principal from the JWT `sub`).
+      # Uses Keycloak's `oidc-sub-mapper`; a property mapper against the
+      # `sub` user attribute does NOT work.
+      - name: basic
+        description: OpenID Connect scope for adding the basic claims (sub) to the token
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: sub
+            protocol: openid-connect
+            protocolMapper: oidc-sub-mapper
+            consentRequired: false
+            config:
+              introspection.token.claim: "true"
+              access.token.claim: "true"
+      # Profile client scope — provides `preferred_username` (verified live,
+      # fixed: without it Kafka's native OAuth login module rejects the token
+      # client-side with "scope value must be non-empty"... and the Strimzi
+      # broker-side validator cannot derive the username).
+      - name: profile
+        description: OpenID Connect built-in scope providing preferred_username
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: preferred_username
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-property-mapper
+            consentRequired: false
+            config:
+              user.attribute: username
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: preferred_username
+              jsonType.label: String
+      # Roles client scope — maps realm roles into the token (the registry's
+      # role-based authz needs sr-admin in the registry-api service account's
+      # token).
+      - name: roles
+        description: OpenID Connect scope for adding realm roles to the token
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: realm roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            consentRequired: false
+            config:
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              multivalued: "true"
+              claim.name: realm_access.roles
+              jsonType.label: String
+      # Email client scope — the Console's NextAuth browser flow requests
+      # `openid email profile groups` (verified live, fixed: without an email
+      # scope in the realm, Keycloak rejects the callback with
+      # "Invalid scopes: openid email profile groups" and the console login
+      # loops back to the sign-in page forever).
+      - name: email
+        description: "OpenID Connect built-in scope: email"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+          consent.screen.text: "${emailScopeConsentText}"
+        protocolMappers:
+          - name: email
+            protocol: openid-connect
+            protocolMapper: oidc-email-mapper
+            consentRequired: false
+            config:
+              user.attribute: email
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: email verified
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-property-mapper
+            consentRequired: false
+            config:
+              user.attribute: emailVerified
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: email_verified
+              jsonType.label: boolean
+    # Realm default client scopes — applied to every NEW client at creation
+    # (verified live, fixed: an operator-imported realm starts with an EMPTY
+    # default-client-scopes list, so imported clients get no `scope` or `sub`
+    # claims at all). Existing clients are NOT back-filled — the kafka-console
+    # client below lists them explicitly.
+    defaultDefaultClientScopes:
+      - basic
+      - profile
+      - roles
+      - email
     enabled: true
     # Short-lived access tokens (5 min) — access stops quickly on revocation
     accessTokenLifespan: 300
@@ -84,8 +195,19 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - "https://kafka-console.${OPENSHIFT_APPS_DOMAIN}/*"
+        # Explicit list (realm defaults do NOT back-fill existing clients):
+        # groups for the console's role mapping, basic for `sub`, profile for
+        # `preferred_username`, roles for realm roles (verified live, fixed:
+        # with `groups` only the password-grant token carried no `sub`, so
+        # SaslInspection could not derive the principal at the proxy), email
+        # because the console's NextAuth requests `openid email profile
+        # groups` and Keycloak rejects the callback without an email scope.
         defaultClientScopes:
           - groups
+          - basic
+          - profile
+          - roles
+          - email
       # Service-account clients — SASL/OAUTHBEARER credentials for the Kafka
       # data path (client_credentials grant). The service account's
       # preferred_username (service-account-<clientId>) becomes the Kafka

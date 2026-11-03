@@ -1,7 +1,11 @@
 # deploy/apicurio/02-postgres.yaml — Step 5.2 (openshift-setup.md)
-# Dev-only ephemeral PostgreSQL for Apicurio Registry (mirrors the Keycloak
-# pattern from Step 2.2). Data is lost on pod restart — use a persistent,
-# supported database for anything beyond development.
+# PostgreSQL for Apicurio Registry, persisted via a volumeClaimTemplate
+# (gp3-csi by default). Previously ephemeral (emptyDir): the registry's
+# schemas were lost on every pod recreation — the record-validation filter's
+# pinned apicurioId then pointed at a missing artifact. With persistence the
+# artifacts survive pod recreation; nothing else in the deployment changes.
+# A volumeClaimTemplate cannot be added to an existing StatefulSet — migrate
+# with pg_dump first, then delete + re-apply this file and pg_restore.
 #
 # storage.type: postgresql is one of the Apicurio Registry 3 storage options
 # (kafkasql, kubernetesops, mysql, postgresql). kafkasql would reuse the Kafka
@@ -29,7 +33,7 @@ spec:
           image: postgres:15
           volumeMounts:
             - mountPath: /data
-              name: cache-volume
+              name: registry-postgresql-data
           env:
             - name: POSTGRES_USER
               value: registryuser
@@ -39,9 +43,14 @@ spec:
               value: /data/pgdata
             - name: POSTGRES_DB
               value: apicurioregistry
-      volumes:
-        - name: cache-volume
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: registry-postgresql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
 ---
 apiVersion: v1
 kind: Service

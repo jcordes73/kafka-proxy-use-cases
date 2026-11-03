@@ -24,7 +24,7 @@ The subscription **pins the exact tested CSV** via `startingCSV: apicurio-regist
 
 ## 5.2 — Deploy the registry (PostgreSQL storage)
 
-Apicurio Registry 3 offers `kafkasql`, `kubernetesops`, `mysql`, and `postgresql` storage. `kafkasql` would reuse the Kafka cluster but requires widening the [Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) DMZ NetworkPolicy to admit the registry namespace — `postgresql` keeps the DMZ closed. [`deploy/apicurio/02-postgres.yaml`](../deploy/apicurio/02-postgres.yaml) is a dev-only ephemeral PostgreSQL (mirrors the Keycloak pattern from [Step 2.2](02-keycloak.md#22--provision-a-database-dev-ephemeral-postgresql) — data is lost on restart); the DB credentials are applied as a Secret (idempotent via `oc apply`) and referenced from the `ApicurioRegistry3` resource:
+Apicurio Registry 3 offers `kafkasql`, `kubernetesops`, `mysql`, and `postgresql` storage. `kafkasql` would reuse the Kafka cluster but requires widening the [Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) DMZ NetworkPolicy to admit the registry namespace — `postgresql` keeps the DMZ closed. [`deploy/apicurio/02-postgres.yaml`](../deploy/apicurio/02-postgres.yaml) persists the PostgreSQL data with a StatefulSet `volumeClaimTemplate` (gp3-csi by default, 5Gi) — the schema artifacts survive pod recreation (verified live: the registry was migrated from an `emptyDir` with a `pg_dump`/`pg_restore` cycle, and the pinned `apicurioId`s stayed valid); the DB credentials are applied as a Secret (idempotent via `oc apply`) and referenced from the `ApicurioRegistry3` resource:
 
 ```bash
 oc apply -f deploy/apicurio/02-postgres.yaml
@@ -120,9 +120,13 @@ oc run registry-allowed --rm -i --restart=Never --image=curlimages/curl -n kafka
 
 ## 5.4 — Register a schema
 
-Schema validation enforces a schema identified by its **`contentId`**. Register a JSON schema through the registry's v3 REST API (from a pod in `kafka-registry` — same-namespace traffic is allowed) and capture the `contentId` from the response:
+Schema validation enforces a schema identified by its **`contentId`**. Register a JSON schema through the registry's v3 REST API (from a pod in `kafka-registry` — same-namespace traffic is allowed) and capture the `contentId` from the response. **Writes require a Bearer token** with the `sr-admin` role (fetch one as in [Getting a token as kafka-admin](#getting-a-token-as-kafka-admin) — the token must come from the **external** `https://keycloak-ingress-kafka-auth...` issuer, matching the registry's `authServerUrl`; tokens fetched via the internal service carry the internal `http://...:8080` issuer and fail verification) — an unauthenticated POST answers 401:
 
 ```bash
+TOKEN=$(curl -sk -X POST "https://keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}/realms/kafka/protocol/openid-connect/token" \
+  -d 'grant_type=password&client_id=kafka-console&client_secret=kafka-console-secret&username=kafka-admin&password=openshift' \
+  | sed 's/.*"access_token":"//;s/".*//')
+
 echo '{
   "artifactId": "record-validation-demo-value",
   "artifactType": "JSON",
@@ -133,11 +137,13 @@ echo '{
     }
   }
 }' | oc run -i --rm registry-curl --restart=Never --image=curlimages/curl -n kafka-registry -- \
-  -s -X POST -H 'Content-Type: application/json' --data-binary @- \
+  -s -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" --data-binary @- \
   http://apicurio-registry-app-service:8080/apis/registry/v3/groups/default/artifacts
 
-# …"version":{"version":"1", … "contentId":1, …}
-export APICURIO_CONTENT_ID=1
+# …"version":{"version":"1", … "contentId":2, "globalId":4, …}
+export APICURIO_CONTENT_ID=2
 ```
+
+> **Re-registering an existing artifact:** delete it first, or the POST answers 409 `ArtifactAlreadyExistsException`. Artifact **deletion is disabled by default** in Registry 3 — the DELETE answers 405 *"Artifact deletion operation is not enabled"* until `spec.app.env` on the `ApicurioRegistry3` resource sets `APICURIO_REST_DELETION_ARTIFACT_ENABLED: "true"` (the property `apicurio.rest.deletion.artifact.enabled`; the older-looking `REGISTRY_REST_ARTIFACT_DELETION_ENABLED` name has no effect on the Red Hat build — verified live). Deleting an artifact frees its IDs: after a delete + re-register cycle the new `contentId` differs from the old one, so re-pin the record-validation filter's `apicurioId` to the new `contentId` (the filter resolves schemas by `contentId`, not `globalId`). As deployed here the fresh registration yields `contentId: 2` / `globalId: 4`.
 
 The demo topic and Record Validation filter that consume this schema moved to the **[Demo scenarios](demos/02-record-validation.md)** document (Demo 2) — the demo topic, filter, wiring, and end-to-end verification now deploy with the optional demo scenarios ([Step 10](10-demos.md)).

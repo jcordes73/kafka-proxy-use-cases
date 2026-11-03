@@ -25,9 +25,9 @@ The subscription **pins the exact tested CSV** via `startingCSV: rhbk-operator.v
 
 > `oc apply -f <dir-or-file>` creates the namespace, the OperatorGroup, and subscribes in a single transaction — note that `Namespace`/`OperatorGroup`/`Subscription` resources must be applied together (as in this file) so the OperatorGroup exists when the Subscription is validated.
 
-## 2.2 — Provision a database (dev: ephemeral PostgreSQL)
+## 2.2 — Provision a database (PostgreSQL, persisted)
 
-The operator does **not** manage the database. For development, deploy an ephemeral PostgreSQL — the ready-to-apply manifest is [`deploy/keycloak/02-postgres.yaml`](../deploy/keycloak/02-postgres.yaml) (a `StatefulSet` with `postgres:15`, `emptyDir` storage, and the `postgres-db` Service on 5432, with dev credentials `testuser`/`testpassword`):
+The operator does **not** manage the database. Deploy PostgreSQL persisted with a StatefulSet `volumeClaimTemplate` — the ready-to-apply manifest is [`deploy/keycloak/02-postgres.yaml`](../deploy/keycloak/02-postgres.yaml) (a `StatefulSet` with `postgres:15`, a 5Gi `volumeClaimTemplate` on the cluster's default storage class, and the `postgres-db` Service on 5432, with dev credentials `testuser`/`testpassword`). Previously this was an `emptyDir`: the realm was wiped on every pod recreation (verified live after a sandbox restart — see the [divergences](../openshift-setup.md)); the DB was then migrated with a `pg_dump`/`pg_restore` cycle and the realm, clients, and service-account `sub` UUIDs all came back untouched:
 
 ```bash
 oc apply -f deploy/keycloak/02-postgres.yaml
@@ -51,7 +51,7 @@ oc -n kafka-auth rollout status statefulset/postgresql-db --timeout=180s
 oc -n kafka-auth get pods -l app=postgresql-db
 ```
 
-> **Production:** provision a supported database with persistent storage (cloud offering or a database operator) — not the ephemeral dev setup above.
+> A `volumeClaimTemplate` cannot be added to an existing StatefulSet — to migrate an existing ephemeral DB, `pg_dump` first, then delete + re-apply this file and `pg_restore` (the same procedure used for the [registry DB](05-apicurio-registry.md#52--deploy-the-registry-postgresql-storage)).
 
 ## 2.3 — TLS certificate and Keycloak deployment
 
@@ -121,6 +121,11 @@ echo "Password:           $(oc get secret keycloak-initial-admin -n kafka-auth -
 Automate realm creation with a `KeycloakRealmImport` CR — the ready-to-apply manifest is [`deploy/keycloak/04-kafka-realm-import.yaml`](../deploy/keycloak/04-kafka-realm-import.yaml):
 
 ```bash
+# Source deploy/env.sh first — it exports OPENSHIFT_APPS_DOMAIN. envsubst
+# substitutes an UNSET variable with an empty string, so applying without it
+# silently stores `https://kafka-console./*` as the redirect URI and the
+# console login fails with "Invalid parameter: redirect_uri" (verified live).
+source deploy/env.sh
 envsubst < deploy/keycloak/04-kafka-realm-import.yaml | oc apply -f -
 oc wait --for=condition=Done keycloakrealmimport/kafka-realm-import -n kafka-auth --timeout=300s
 ```

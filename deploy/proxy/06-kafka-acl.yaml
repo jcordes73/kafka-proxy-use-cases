@@ -29,13 +29,21 @@ data:
     from io.kroxylicious.filter.authorization import TopicResource as Topic, GroupResource as Group, TransactionalIdResource as TransactionalId;
 
     // Infrastructure clients — full access (data path, console, administration)
+    // NOTE: SaslInspection derives the authenticated principal from the JWT
+    // `sub` claim (a UUID), so every service-account client is granted by BOTH
+    // name and sub UUID. The sub UUIDs are realm-generated — they CHANGE when
+    // the `kafka` realm is re-imported (e.g. after PostgreSQL data loss), and
+    // this file must be refreshed with the new values (decode a fresh token).
     allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Topic with name like "*";
     allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * Group with name like "*";
     allow User with name in {"service-account-kafka-bridge", "service-account-kafka-console-kafka", "kafka-admin"} to * TransactionalId with name like "*";
 
-    // Camel clients — least privilege (Step 9 routes, topic-A)
-    allow User with name = "service-account-camel-producer" to WRITE Topic with name = "topic-A";
-    allow User with name = "service-account-camel-consumer" to READ Topic with name = "topic-A";
+    // Camel clients — least privilege (Step 9 routes, topic-A). DESCRIBE is
+    // required: the producer/consumer fetch Metadata for the topic before
+    // producing/consuming (verified live, fixed: WRITE-only denied the
+    // Metadata fetch with TOPIC_AUTHORIZATION_FAILED).
+    allow User with name = "service-account-camel-producer" to {WRITE, DESCRIBE} Topic with name = "topic-A";
+    allow User with name = "service-account-camel-consumer" to {READ, DESCRIBE} Topic with name = "topic-A";
     allow User with name = "service-account-camel-consumer" to READ Group with name = "camel-consumer";
 
     // Demo data-path users (Keycloak password users, Step 2.4) — READ on a
