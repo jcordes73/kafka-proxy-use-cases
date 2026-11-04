@@ -233,6 +233,74 @@ sequenceDiagram
 
 TLS trust summary: the **client** trusts the CA that signed `proxy-tls` (extracted in the [TLS smoke test, Step 6.10](docs/06-proxy.md#610--apply-and-verify)); the **proxy** trusts the Kafka cluster CA of each backend cluster (via `KafkaService` `tls.trustAnchorRef`, [Step 6.5](docs/06-proxy.md#65--define-the-backend-cluster-kafkaservice)); the **brokers** trust Keycloak's JWKS endpoint (in-cluster, fetched over plain HTTP — the same endpoint the clients fetch tokens from, [Step 2.5](docs/02-keycloak.md#25--client-authentication-at-the-proxy)).
 
+#### The proxy CR model — how the custom resources fit together
+
+Five custom resource kinds build the proxy ([understood in detail in Step 6.2](docs/06-proxy.md#62--understand-the-custom-resources)); they are all wired together by **name references inside the `kafka-proxy` namespace**. The diagram shows the CRs exactly as deployed here ([deploy/proxy/](deploy/README.md)):
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Red Hat Text, Red Hat Display, sans-serif","primaryColor":"#FFFFFF","primaryTextColor":"#151515","primaryBorderColor":"#C7C7C7","lineColor":"#4D4D4D","secondaryColor":"#F2F2F2","tertiaryColor":"#F2F2F2","clusterBkg":"#F2F2F2","clusterBorder":"#C7C7C7","edgeLabelBackground":"#FFFFFF","titleColor":"#151515"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":55,"padding":10}}}%%
+flowchart TB
+    KP["KafkaProxy · simple<br/>(owns the proxy Deployment)"]
+
+    subgraph vcs["VirtualKafkaCluster — the stable client-facing clusters"]
+        VA["kafka-cluster-1<br/>(filters: sasl-inspection,<br/>record-validation, authorization)"]
+        VB["kafka-cluster-2<br/>(filters: sasl-inspection,<br/>authorization)"]
+    end
+
+    subgraph ings["KafkaProxyIngress — how clients reach a virtual cluster"]
+        IA["cluster-ip-1<br/>(clusterIP · TLS · one shared SNI port)"]
+        IB["cluster-ip-2<br/>(clusterIP · TLS)"]
+    end
+
+    subgraph svcs["KafkaService — the backend clusters (a detail to clients)"]
+        SA["kafka-cluster-1<br/>(bootstrap :9093 · nodeIds 0–2)"]
+        SB["kafka-cluster-2<br/>(bootstrap :9093 · nodeIds 0–2)"]
+    end
+
+    subgraph filts["KafkaProtocolFilter — the filter chain pieces"]
+        F1["sasl-inspection"]
+        F2["record-validation"]
+        F3["kafka-authorization"]
+    end
+
+    CERT["Secret · proxy-tls<br/>(SANs for the client-facing names)"]
+    CA1["Secret · kafka-cluster-1-cluster-ca-cert<br/>(backend cluster CA)"]
+    CM["ConfigMap · kafka-acl-rules<br/>(acl-rules.txt)"]
+
+    VA -- "proxyRef" --> KP
+    VB -- "proxyRef" --> KP
+    IA -- "proxyRef" --> KP
+    IB -- "proxyRef" --> KP
+    VA -- "ingresses[].ingressRef" --> IA
+    VB -- "ingresses[].ingressRef" --> IB
+    VA -- "targetKafkaServiceRef" --> SA
+    VB -- "targetKafkaServiceRef" --> SB
+    VA -- "filterRefs[]" --> F1
+    VA -- "filterRefs[]" --> F2
+    VA -- "filterRefs[]" --> F3
+    VB -- "filterRefs[]" --> F1
+    VB -- "filterRefs[]" --> F3
+    IA -. "ingresses[].tls.certificateRef" .-> CERT
+    SA -. "tls.trustAnchorRef" .-> CA1
+    F3 -. "aclFile: ${configmap:...}" .-> CM
+
+classDef red fill:#FBC5C5,stroke:#EE0000,stroke-width:2px
+classDef blue fill:#E0F0FF,stroke:#0066CC
+classDef gray fill:#F2F2F2,stroke:#4D4D4D
+classDef purple fill:#ECE6FF,stroke:#5E40BE
+class KP red
+class VA,VB,IA,IB,SA,SB blue
+class F1,F2,F3 purple
+class CERT,CA1,CM gray
+```
+
+- **`KafkaProxy`** ([Step 6.3](docs/06-proxy.md#63--create-the-kafkaproxy-resource)) — the top-level resource; the operator runs the proxy Deployment for it. Every other CR points back to it via `proxyRef`.
+- **`VirtualKafkaCluster`** ([Step 6.7](docs/06-proxy.md#67--create-the-virtualkafkacluster)) — one client-facing cluster. Its three references make the whole model: **`targetKafkaServiceRef`** (which backend it fronts), **`ingresses[].ingressRef`** (how clients reach it), and **`filterRefs[]`** (the filter chain applied to its traffic, in order).
+- **`KafkaProxyIngress`** ([Step 6.4](docs/06-proxy.md#64--choose-and-create-an-ingress)) — the exposure point (`clusterIP`, `loadBalancer`, or `openShiftRoute`); `proxyRef` selects the proxy that creates the Service/LB/Route.
+- **`KafkaService`** ([Step 6.5](docs/06-proxy.md#65--define-the-backend-cluster-kafkaservice)) — the backend cluster definition: `bootstrapServers` + `nodeIdRanges` (or a `strimziKafkaRef` to let the operator resolve a Streams-managed cluster automatically), plus the cluster CA via `tls.trustAnchorRef`.
+- **`KafkaProtocolFilter`** ([Step 6.6](docs/06-proxy.md#66--optional-add-a-filter)) — reusable filter definitions; the same `sasl-inspection` filter is shared by both virtual clusters, and a filter can read its configuration from a ConfigMap (the Authorization filter's ACL rules, [Step 6.6 / deploy/proxy/06-kafka-acl.yaml](deploy/README.md)).
+- The **dotted references** are Kubernetes resources (Secrets, ConfigMap) rather than proxy CRs — certificates the proxy presents to clients and trusts upstream, and the ACL rules file.
+
 #### Ingress options
 
 A `KafkaProxyIngress` defines how clients reach each virtual cluster. Three implementation options ([docs/06-proxy.md §6.4](docs/06-proxy.md#64--choose-and-create-an-ingress)) — all TLS variants **terminate TLS at the proxy**, so certificate changes never touch clients:
@@ -320,6 +388,8 @@ linkStyle 0,1,2,3,4,5 stroke:#EE0000,stroke-width:2px
 | SASL Passthrough Inspection | `SaslInspection` | Broker still decides, but the proxy extracts the end-client principal — enabling the Authorization and Entity Isolation filters | Yes |
 
 With **Red Hat build of Keycloak** as the authorization server: clients obtain short-lived JWTs from Keycloak and authenticate with `SASL/OAUTHBEARER`; the brokers validate each token against Keycloak's JWKS endpoint during the SASL exchange (with audience/issuer checks for cross-service replay protection), and `SaslInspection` puts the end-client identity in front of the proxy's Authorization filter. Token revocation is instant and centralized — disable the client in Keycloak and access stops at the next token expiry.
+
+**Token checking is per-connection, not per-message.** The SASL/OAUTHBEARER exchange authenticates the session once at connection establishment — the broker validates the JWT (signature via JWKS, issuer, expiry) and from then on every Produce/Fetch request on that connection carries no credentials. Re-authentication happens on token expiry (KIP-368): well-behaved clients refresh the token ahead of expiry and re-run the SASL exchange on the same connection (in this deployment the realm's tokens live 5 minutes, so clients re-authenticate early — the benign `Expiring credential ...` client WARN), and the broker enforces `connections.max.reauth.ms` (set to 1 hour on this deployment's `tls` listener) so an expired token can't keep a session alive indefinitely. New connections always need a valid, unexpired token. Authorization, by contrast, is per-request — the broker checks ACLs on every Produce/Fetch, and the proxy's Authorization filter checks its rules on every request — but the *identity* used was fixed at connect time and updates on each re-auth; a revoked user's established sessions therefore end at the next re-auth deadline or connection close, not instantly.
 
 The **Streams for Apache Kafka Console** authenticates its browser users through Keycloak independently (`security.oidc` on the `Console` CR) — SSO for the UI layer with no involvement of the proxy.
 
@@ -579,6 +649,8 @@ linkStyle 0,1,3 stroke:#EE0000,stroke-width:2px
 | Per-tenant quotas / rate limiting | ❌ | Not built in; custom filter territory |
 | Audit logging of payloads | ❌ | Metrics only; custom filters for deeper auditing |
 | Protocol version translation (ApiVersions) | ❌ (product) | Available upstream in Kroxylicious; not in Red Hat docs as built-in |
+| Topic name mapping (one client-visible name, another on the broker) | ❌ | The proxy rewrites broker *addresses* only; topic names pass through. EntityIsolation covers groups/txn-IDs but explicitly not topics; upstream MultiTenant = fixed per-tenant prefix only; arbitrary mapping ("topic weaving") is an upstream design proposal. Custom-filter territory (Metadata + Produce/Fetch + topic-id correspondence must stay consistent) |
+| SASL translation (OIDC downstream → SCRAM upstream) | ❌ | SASL passthrough requires the same mechanism both sides (verified live: the `KafkaService` CRD exposes only TLS config — no SASL/auth field, so the proxy cannot initiate SASL upstream). Supported mixed mode: SASL terminated at the proxy (upstream 0.24.0 preview) with mTLS upstream; protocol translation (OIDC → SCRAM) is an upstream design proposal |
 
 ## When NOT to Use the Proxy
 
