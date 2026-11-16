@@ -220,3 +220,18 @@ The alternative — SASL/PLAIN with `scram-sha-512` `KafkaUser` credentials — 
    ```
 
 > An OAuth-secured Kafka cluster *outside* the proxy path (clients connect directly) remains a valid alternative — the same `custom` authentication configuration applies, without the filter step.
+
+## 2.6 — Availability, recovery, and DR (the auth plane)
+
+Keycloak is a **stateful, platform-critical dependency**: the data path authenticates against it (this section), the console and registry UIs log in through it ([Step 8.3](08-console.md#83--recommended-secure-the-console-ui-with-keycloak-oidc)), and the proxy ACLs reference its service-account `sub` UUIDs ([6.6](06-proxy.md#66--optional-add-a-filter)). Plan for it in three tiers:
+
+**1. State (solved in this deployment).** The realm lives in PostgreSQL with a `volumeClaimTemplate` ([Step 2.2](#22--provision-a-database-postgresql-persisted)) — survived pod recreation, verified with a live `pg_dump`/`pg_restore` migration in which the realm, clients, and service-account `sub` UUIDs all came back untouched.
+
+**2. In-cluster recovery (two paths, both verified).**
+
+- **Database restore** — `pg_dump` from the healthy DB, `pg_restore` into a fresh `postgresql-db-0` (the exact procedure used for the live migration in [Step 2.2](#22--provision-a-database-postgresql-persisted)).
+- **Declarative re-import** — the realm is fully defined in [`deploy/keycloak/04-kafka-realm-import.yaml`](../deploy/keycloak/04-kafka-realm-import.yaml): if the DB is lost, delete + re-apply the `KeycloakRealmImport` to force a new import job (the CR reports `Done=True` and will **not** re-run on its own — [divergences](../openshift-setup.md)). The `sub` UUIDs regenerate deterministically from the import, so the proxy ACL rules survive unchanged — **the realm definition in git is itself a recovery artifact**. Keep it in sync with any manual realm changes (or make the import the only change path).
+
+**3. Degradation while Keycloak is down.** Connections authenticate at session establishment: the brokers cache the JWKS and validate established sessions without per-request calls ([Step 2.4](#24--create-the-kafka-realm-and-the-console-client)), so **existing authenticated connections keep working until token expiry / re-authentication**, while **new connections and token fetches fail** — workloads crash-loop on `404 {"error":"Realm does not exist"}` / JWKS errors (the [Step 2.2](#22--provision-a-database-postgresql-persisted) symptom). Brief outages therefore degrade *new* traffic, not live sessions; token lifetime ([Step 2.4](#24--create-the-kafka-realm-and-the-console-client), 5 min) sets the outage window before established clients are affected.
+
+**What DR across sites additionally requires — beyond this guide:** active/passive Keycloak means PostgreSQL-level replication (or backup/restore RPO you accept), Keycloak instances in both sites, DNS/Route cutover for the realm URL (every client's `sasl.jaas.config` token endpoint and every validator's JWKS URL points at it), and revisiting the console/registry OIDC redirect URIs. The Red Hat build of Keycloak [operational guide](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.4/html-single/operational_guide/index) (caching, connection tuning, HA sections) is the reference. **Important: [Demo 14](demos/14-disaster-recovery.md) is data-plane DR only** — after a Kafka failover, the auth plane must come up in the same site, or the failed-over cluster can't authenticate a single client. Plan the two together.

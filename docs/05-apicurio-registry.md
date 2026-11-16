@@ -147,3 +147,21 @@ export APICURIO_CONTENT_ID=2
 > **Re-registering an existing artifact:** delete it first, or the POST answers 409 `ArtifactAlreadyExistsException`. Artifact **deletion is disabled by default** in Registry 3 — the DELETE answers 405 *"Artifact deletion operation is not enabled"* until `spec.app.env` on the `ApicurioRegistry3` resource sets `APICURIO_REST_DELETION_ARTIFACT_ENABLED: "true"` (the property `apicurio.rest.deletion.artifact.enabled`; the older-looking `REGISTRY_REST_ARTIFACT_DELETION_ENABLED` name has no effect on the Red Hat build — verified live). Deleting an artifact frees its IDs: after a delete + re-register cycle the new `contentId` differs from the old one, so re-pin the record-validation filter's `apicurioId` to the new `contentId` (the filter resolves schemas by `contentId`, not `globalId`). As deployed here the fresh registration yields `contentId: 2` / `globalId: 4`.
 
 The demo topic and Record Validation filter that consume this schema moved to the **[Demo scenarios](demos/02-record-validation.md)** document (Demo 2) — the demo topic, filter, wiring, and end-to-end verification now deploy with the optional demo scenarios ([Step 10](10-demos.md)).
+
+## 5.5 — Do you need the registry at all? (and its DR boundary)
+
+**The registry is optional — exactly one of the Record Validation filter's three modes needs it** ([6.6](06-proxy.md#66--optional-add-a-filter), the filter subsection):
+
+| Validation mode | Needs Apicurio? |
+|---|---|
+| **Apicurio schema validation** | Yes — Registry 3.x, `contentId`-pinned schemas (this step) |
+| **JSON syntax validation** *(3.2 Technology Preview)* | No |
+| **JWS signature validation** *(3.2 Technology Preview)* | No |
+
+If the PoC only needs poison-message blocking via JSON syntax or provenance via JWS, **skip this entire step** — no operator, no registry, no PostgreSQL. If the filter was wired with a schema rule, drop that rule (or the whole filter) from the `KafkaProtocolFilter`'s rules; the JSON-syntax/JWS rules work standalone. Revisit the decision if data contracts arrive: schemas can be added later, but re-wiring the filter touches the proxy ([6.10](06-proxy.md#610--apply-and-verify) restart note).
+
+**State and DR boundary** (mirrors the auth-plane tiering in [2.6](02-keycloak.md#26--availability-recovery-and-dr-the-auth-plane)):
+
+- **State:** PostgreSQL with a `volumeClaimTemplate` ([5.2](#52--deploy-the-registry-postgresql-storage)) — schema artifacts survived pod recreation, verified with a live `pg_dump`/`pg_restore` migration in which the pinned `apicurioId`s stayed valid (the filter's config references them — they are the state that matters).
+- **In-cluster recovery:** the same `pg_dump`/`pg_restore` pattern; schemas are also declaratively recoverable by re-registering ([5.4](#54--register-a-schema), including the delete-first/409 and re-pinning caveats).
+- **Cross-site DR — beyond this guide:** the registry DB joins the auth plane's PostgreSQL in the same DR design. The `kafkasql` storage alternative ([5.2](#52--deploy-the-registry-postgresql-storage)) would remove the PostgreSQL state entirely (schemas live in the Kafka cluster, and ride MM2 replication for free) at the cost of widening the [Step 3.4](03-kafka-cluster.md#34--restrict-kafka-ingress-to-the-proxy-namespace-dmz) DMZ netpol — a legitimate architecture choice if the DR of a separate datastore is the blocker.

@@ -1,0 +1,61 @@
+# deploy/ossm/01-install.yaml — Step 7.8 (docs/07-http-bridge.md)
+# OPTIONAL — OpenShift Service Mesh 3 (OSSM) install for the bridge's OIDC
+# front door (Step 7.8). OSSM 3 uses the Sail operator: an `Istio` resource
+# deploys the control plane, an `IstioCNI` resource the CNI plugin. Both are
+# cluster-scoped; the operator Subscription goes into openshift-operators.
+#
+# Requires cluster-admin. Do NOT co-install with OpenShift Service Mesh 2
+# (conflicts — see the OSSM 3 installing guide).
+#
+# The Istio CR scopes discovery with discoverySelectors: only namespaces
+# labeled istio-discovery=enabled are discovered, so the mesh does not try to
+# manage the whole cluster (kafka-http-bridge gets this label in Step 7.8).
+---
+# Operator subscription (cluster-admin). Alternatively install from OperatorHub:
+# "Red Hat OpenShift Service Mesh 3" — channel `stable` (or `stable-3.x` to pin).
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: servicemeshoperator3
+  namespace: openshift-operators
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: servicemeshoperator3
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+---
+# Control plane namespace (labeled for discovery — the Istio CR below selects it)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    istio-discovery: enabled
+---
+# CNI plugin namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-cni
+---
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  namespace: istio-system
+  # spec.version is omitted → the operator deploys its default supported Istio
+  # version. Pin it (e.g. v1.25.x) if you need a fixed version.
+  values:
+    meshConfig:
+      discoverySelectors:
+        - matchLabels:
+            istio-discovery: enabled
+---
+apiVersion: sailoperator.io/v1
+kind: IstioCNI
+metadata:
+  name: default
+spec:
+  namespace: istio-cni

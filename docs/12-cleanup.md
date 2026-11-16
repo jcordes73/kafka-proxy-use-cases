@@ -1,6 +1,6 @@
 # Step 12: Clean up (teardown)
 
-> [↑ Setup overview](../openshift-setup.md) · next: — (end of the guide)
+> [↑ Setup overview](../openshift-setup.md) · next: [Preparing a disconnected (air-gapped) installation](14-disconnected-install.md)
 
 Tearing the platform down in the **reverse of the deployment order** (see the [Guide map](../openshift-setup.md#guide-map)): the clients that depend on other components go first, the infrastructure they depended on goes last. All commands run from the **repository root**.
 
@@ -23,6 +23,14 @@ oc delete project kafka-console
 # HTTP Bridge (Step 7):
 oc delete kafkabridge/my-bridge -n kafka-http-bridge
 oc delete project kafka-http-bridge api-gateway   # api-gateway is the DMZ verification stand-in (deploy/bridge/02-bridge-netpol-dmz.yaml)
+
+# OPTIONAL OSSM OIDC front door (Step 7.8) — bridge-scoped pieces first, then
+# the control plane (skip the latter if other workloads use the mesh; leave
+# the operator installed if anything else does):
+#   oc delete requestauthentication/my-bridge-jwt authorizationpolicy/my-bridge-oidc -n kafka-http-bridge  # (with the namespace)
+#   oc delete networkpolicy/keycloak-allow-http-istiod -n kafka-auth
+#   oc delete istio/default -n istio-system istiocni/default   # control plane + CNI (cluster-admin)
+#   # + delete the istio-system / istio-cni projects if no longer used
 
 # Demo manifests (Step 10) — filters/virtual-cluster wiring from the demo
 # directories, if applied (they replace or add VirtualKafkaCluster resources):

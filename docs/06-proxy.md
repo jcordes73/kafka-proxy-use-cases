@@ -35,6 +35,8 @@ oc patch installplan <name> -n openshift-operators --type merge \
 oc get csv -n openshift-operators | grep amq-streams-proxy   # Succeeded
 ```
 
+> **Coexistence with an older Streams operator:** the proxy operator is an **independent OLM subscription** — it neither manages nor conflicts with a Streams cluster operator of a different version already on the cluster (e.g., `amq-streams` 3.0.x): separate operators, separate CRD families (`KafkaProxy`/`KafkaService`/`VirtualKafkaCluster` vs `Kafka`/`KafkaTopic`), no shared watches. This stack's `KafkaService` also uses **explicit `bootstrapServers`** — no `strimziKafkaRef` ([6.5](#65--define-the-backend-cluster-kafkaservice)) — so there is no version coupling to the Kafka CRs at all. The caveats: the proxy is TP-pinned to 3.2 testing, and a proxied **Kafka 3.0** cluster's protocol vintage through the 3.2 proxy is untested territory (Kafka 3.0.x is also past its maintenance window) — verify the data path end-to-end in the PoC, and plan the Streams upgrade to 3.2 regardless.
+
 ### Alternative 2: Red Hat subscription artifacts
 
 Download the release archive `streams-3.2-ocp-install-examples.zip` from the [Streams for Apache Kafka software downloads page](https://access.redhat.com/jbossnetwork/restricted/listSoftware.html?downloadType=distributions&product=jboss.amq.streams) and extract it — `install/` contains the YAML manifests for the operator, `examples/` example custom resources for deploying a proxy:
@@ -403,12 +405,12 @@ EOF
 
 6. **Smoke-test end-to-end (TLS variant)** — for TLS ingresses (`clusterIP` with `protocol: TLS`, `loadBalancer`, or `openShiftRoute`), the client must trust the CA that signed the proxy's server certificate **and** authenticate with OAUTHBEARER. Extract the CA, make it available to the test pod via a ConfigMap, and point the CLI at both:
 
-   ```bash
-   # 1. Extract the CA certificate (from the Secret/ConfigMap holding the signing CA)
-   oc get secret <ca-secret> -n kafka-proxy -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```bash
+# 1. Extract the CA certificate (from the Secret/ConfigMap holding the signing CA)
+oc get secret <ca-secret> -n kafka-proxy -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 
-   # 2. Provide it to the test pod as a ConfigMap (idempotent via oc apply)
-   oc apply -f - <<EOF
+# 2. Provide it to the test pod as a ConfigMap (idempotent via oc apply)
+oc apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -419,25 +421,25 @@ data:
 $(sed 's/^/    /' ca.crt)
 EOF
 
-   # 3. Run the CLI with the CA mounted, TLS, and OAUTHBEARER enabled
-   oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-proxy \
-     --overrides='{
-       "spec": {
-         "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}, "runAsNonRoot": true},
-         "containers": [{
-           "name": "kafka-cli",
-           "image": "quay.io/strimzi/kafka:latest-kafka-4.2.2",
-           "env": [
-             {"name": "OAUTH_CLIENT_SECRET", "valueFrom": {"secretKeyRef": {"name": "demo-client-oauth", "key": "client-secret"}}},
-             {"name": "KAFKA_OPTS", "value": "-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token"}
-           ],
-           "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true},
-           "volumeMounts": [{"name": "proxy-ca", "mountPath": "/etc/proxy-ca", "readOnly": true}]
-         }],
-         "volumes": [{"name": "proxy-ca", "configMap": {"name": "proxy-ca"}}]
-       }
-     }' -- bash -c '
-       cat > /tmp/client.properties <<EOF
+# 3. Run the CLI with the CA mounted, TLS, and OAUTHBEARER enabled
+oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-proxy \
+  --overrides='{
+    "spec": {
+      "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}, "runAsNonRoot": true},
+      "containers": [{
+        "name": "kafka-cli",
+        "image": "quay.io/strimzi/kafka:latest-kafka-4.2.2",
+        "env": [
+          {"name": "OAUTH_CLIENT_SECRET", "valueFrom": {"secretKeyRef": {"name": "demo-client-oauth", "key": "client-secret"}}},
+          {"name": "KAFKA_OPTS", "value": "-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token"}
+        ],
+        "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}, "runAsNonRoot": true},
+        "volumeMounts": [{"name": "proxy-ca", "mountPath": "/etc/proxy-ca", "readOnly": true}]
+      }],
+      "volumes": [{"name": "proxy-ca", "configMap": {"name": "proxy-ca"}}]
+    }
+  }' -- bash -c '
+    cat > /tmp/client.properties <<EOF
 security.protocol=SASL_SSL
 sasl.mechanism=OAUTHBEARER
 sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;
@@ -448,11 +450,11 @@ sasl.oauthbearer.token.endpoint.url=http://keycloak-http.kafka-auth.svc.cluster.
 ssl.truststore.location=/etc/proxy-ca/ca.crt
 ssl.truststore.type=PEM
 EOF
-       echo "hello through the proxy (TLS)" | bin/kafka-console-producer.sh \
-         --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
-         --topic topic-A --command-config /tmp/client.properties
-     '
-   ```
+    echo "hello through the proxy (TLS)" | bin/kafka-console-producer.sh \
+      --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 \
+      --topic topic-A --command-config /tmp/client.properties
+  '
+```
 
    Notes for the TLS variant:
 
@@ -463,3 +465,55 @@ EOF
    - If the ingress uses client-certificate (mutual TLS) authentication, add `ssl.keystore.location`, `ssl.keystore.password`, and `ssl.key.password` as required.
 
 7. Continue with [Getting Started](../README.md#getting-started-on-openshift) to add filters.
+
+## 6.11 — (Optional) Proxying an external Kafka cluster
+
+A `KafkaService` has nothing cluster-specific about it — it is just `bootstrapServers` + TLS trust + node-ID range (see [6.5](#65--define-the-backend-cluster-kafkaservice)). The same decoupling that lets Demo 9 stack three virtual clusters over two physical backends lets you point a **`KafkaService` at a Kafka cluster outside this OpenShift cluster** — Amazon MSK, Confluent Cloud, another OCP cluster, a partner's cluster — and front it with a virtual cluster exactly like the in-cluster ones:
+
+```yaml
+kind: KafkaService
+apiVersion: kroxylicious.io/v1alpha1
+metadata:
+  namespace: kafka-proxy
+  name: external-cluster
+spec:
+  bootstrapServers: my-cluster.kafka.external.example.com:9094   # the external cluster's bootstrap
+  tls:
+    trustAnchorRef:            # the EXTERNAL cluster's CA — a public CA (Confluent Cloud, MSK
+      name: external-cluster-ca # with public certs) may not need an explicit anchor at all
+      key: ca.crt
+      kind: Secret
+      storeType: PEM
+  nodeIdRanges:
+    - name: brokers            # must match the external cluster's broker IDs (e.g. MSK: 1–3)
+      start: 1
+      end: 3
+```
+
+Reference it from a new `VirtualKafkaCluster` ([6.7](#67--create-the-virtualkafkacluster)) with its own ingress — clusterIP for in-cluster clients, SNI/TLS for off-cluster ([6.4](#64--choose-and-create-an-ingress)) — and clients see your virtual cluster bootstrap, never the external endpoints.
+
+What changes compared to the in-cluster backends:
+
+- **Trust material** — trust the *external* cluster's CA (a Secret in `kafka-proxy`), not the Strimzi cluster CA.
+- **Egress** — the DMZ netpols are ingress-only, so the proxy can already reach out. If you ever add default-deny **egress** to `kafka-proxy`, open the external bootstrap/broker ports explicitly.
+- **Broker-ID ranges** — `nodeIdRanges` must reflect the external cluster's actual node IDs so the proxy's broker-address translation stays consistent.
+- **SASL is passthrough — the big one.** The proxy forwards the SASL exchange verbatim; it neither terminates nor translates authentication. The mechanism clients use on the virtual cluster must be the one the *external* listener accepts: for an external OAUTHBEARER listener, clients need tokens from **that cluster's IdP** (its issuer/JWKS — not the `kafka-auth` realm; the [6.10](#610--apply-and-verify) `KAFKA_OPTS` token-endpoint allowlist gotcha applies to those clients too). SCRAM/PLAIN/mTLS backends mean clients present those credentials. There is no SASL translation across mechanisms.
+- **Feature compatibility** — check the external cluster's Kafka version/API support against the proxy release; protocol features can surface differently through the proxy.
+
+Why this is one of the proxy's best use cases: an external backend is a cluster **you don't fully control**, and the DMZ pattern gives you a control point at the exit door —
+
+- clients see only your virtual cluster bootstrap: the external cluster's endpoints, TLS material, and broker topology stay in `kafka-proxy`; its own firewall/IP-allowlist only ever admits the proxy namespace, not every client
+- the filters from [6.6](#66--optional-add-a-filter) become boundary enforcement: **Record Validation** before data leaves for the external cluster, **Record Encryption** so payloads are only decryptable inside your trust boundary, deny-by-default ACLs ([6.6](#66--optional-add-a-filter), the ACL subsection) for what may be accessed at all
+
+One caveat: the proxy is in the data path, so every produce/fetch makes two hops from your cluster's perspective. If the goal is purely *replicating* data to or from an external cluster (not serving clients), the MirrorMaker 2 plane ([Step 4](04-mirrormaker2.md)) is the better tool — the proxy shines when clients need direct, policy-enforced access.
+
+**Forwarding external topics into an internal cluster** combines the two blocks:
+
+1. **External side** — build the external virtual cluster (the `KafkaService` above + a `VirtualKafkaCluster`) if the external connection should flow through your policy boundary, or let MM2 reach the external cluster directly.
+2. **Replication** — add an MM2 mirror ([Step 4](04-mirrormaker2.md)) with `source.bootstrapServers` at the external cluster (directly, or at the external virtual cluster's bootstrap — the proxy fronting the MM2 connection puts your DMZ, ACLs, and filters in the replication path) and `target.alias`/bootstrap at the internal cluster.
+3. **Selective replication** — apply the allowlist patterns from [Step 4](04-mirrormaker2.md#41--create-the-namespace-and-the-mm2-resource) (`topicsPattern`/`groupsPattern`) so only the external topics you actually need land internally; the mirrored copies are prefixed with the source alias.
+4. **Caveats carry over** — the [SASL-passthrough](#611--optional-proxying-an-external-kafka-cluster) rule (the external listener's mechanism is what MM2 must present), the [platform-policy and support-triangle note](#611--optional-proxying-an-external-kafka-cluster) for the external side, and the NetworkPolicy planning for MM2's egress to the external bootstrap.
+
+**Support posture for external backends:** compatibility with "all types of Kafka instances, irrespective of their distribution" is a *functional* statement, not an SLA. Red Hat supports the proxy's protocol-level connection to a spec-compliant Apache Kafka cluster; issues originating **in the third-party service** belong to that vendor, and no external service (MSK, Confluent Cloud, …) is certified — validate your backend in your environment. Note also that the proxy itself is **Technology Preview in Streams 3.2** (no production SLA at all yet). See the family-wide note in the [README](../README.md#components-and-tested-versions).
+
+**Platform policies and the support triangle.** From the proxy's egress connection onward, the external platform's policies apply — its access policy (accepted auth mechanisms, TLS requirements), its data-governance terms, and its **support policy**, whose supported-client envelope the proxy must stay inside. Two practical consequences: **quota concentration** — all client traffic now originates from one namespace, so the platform's per-connection limits and quotas bind your entire fleet — and the **support triangle** — Red Hat supports the proxy side, the platform supports their service behind a supported client, and *neither* policy covers the integration. Keep the proxy version within the platform's supported client/protocol-version matrix and maintain a **direct-connection baseline** (a test path that bypasses the proxy): when something breaks, it yields the bisect evidence both support organizations will ask for ("fails direct" → their case; "fails only via proxy" → Red Hat's, with a reference-cluster repro).

@@ -1,0 +1,97 @@
+# deploy/loadtest/02-kafka-consumer-perf.yaml — Step 15.2 (docs/15-load-testing.md)
+# Kafka-channel consumer load test through the proxy: drains the records the
+# producer Job (01) wrote, reporting MB/s, per-interval fetch rates and average
+# latency. Same verified client pattern as the producer Job (SASL_SSL +
+# password grant as kafka-user-a); auto.offset.reset=earliest so the run reads
+# the topic from the beginning, and the group is the only one the demo ACLs
+# grant user-a (kafka-user-a-group).
+#
+# Prerequisites: same as 01 (loadtest-oauth Secret, proxy-ca ConfigMap), and a
+# completed producer run (or any backlog in the topic).
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-consumer-perf
+  namespace: kafka-proxy
+  labels:
+    app: kafka-loadtest
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: kafka-loadtest
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+      containers:
+        - name: consumer-perf
+          image: quay.io/strimzi/kafka:latest-kafka-4.2.2
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              set -euo pipefail
+              [ -f /opt/proxy-ca/ca.crt ] || { echo "FAIL: proxy-ca ConfigMap not mounted — create it first (docs/15, Step 15.2 prerequisites)"; exit 1; }
+              cat > /tmp/client.properties <<EOF
+              security.protocol=SASL_SSL
+              sasl.mechanism=OAUTHBEARER
+              sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required oauth.token.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token" oauth.client.id="kafka-console" oauth.client.secret="kafka-console-secret" oauth.password.grant.username="${OAUTH_USER}" oauth.password.grant.password="${OAUTH_PASS}";
+              sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
+              ssl.truststore.type=PEM
+              ssl.truststore.location=/opt/proxy-ca/ca.crt
+              auto.offset.reset=earliest
+              EOF
+              echo "Drain: ${MESSAGES} records from ${BOOTSTRAP} topic=${TOPIC} group=${GROUP}"
+              bin/kafka-consumer-perf-test.sh \
+                --bootstrap-server "${BOOTSTRAP}" \
+                --topic "${TOPIC}" \
+                --messages "${MESSAGES}" \
+                --group "${GROUP}" \
+                --timeout 60000 \
+                --reporting-interval 1000 \
+                --show-detailed-stats \
+                --consumer.config /tmp/client.properties
+          env:
+            - name: BOOTSTRAP
+              value: kafka-cluster-2-cluster-ip-2-bootstrap.kafka-proxy.svc.cluster.local:9292
+            - name: TOPIC
+              value: topic-A
+            - name: GROUP
+              value: kafka-user-a-group
+            - name: MESSAGES
+              value: "1200000"
+            - name: OAUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-oauth
+                  key: username
+            - name: OAUTH_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-oauth
+                  key: password
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          volumeMounts:
+            - name: proxy-ca
+              mountPath: /opt/proxy-ca
+              readOnly: true
+      volumes:
+        - name: proxy-ca
+          configMap:
+            name: proxy-ca

@@ -48,10 +48,23 @@ spec:
       # nested under `source` it is an unknown field that the CRD silently
       # prunes, and the operator then generates zero mirror connectors.
       sourceConnector: {}
-      # Mirror all topics and consumer groups; mirrored resources are prefixed
-      # with the source alias (kafka-cluster-1.<topic>, kafka-cluster-1.<group>)
-      topicsPattern: ".*"
-      groupsPattern: ".*"
+      # Selective replication — only what this use case actually uses:
+      # - topics: the three data topics declared in deploy/kafka/03-topics.yaml
+      #   (topic-A = main data path, topic-B = ACL deny-path topic, topic-C =
+      #   kafka-user-c's topic)
+      # - groups: the consumer groups the guide exercises (camel-consumer,
+      #   kafka-user-a/b/c-group, bridge-consumer-group) plus the entity-
+      #   isolation demo's groups, which materialize on the brokers as
+      #   <sub-UUID>_<name> — the leading `.*` catches the prefixed forms.
+      # The pattern is a plain ALLOWLIST: anything not matching is silently
+      # skipped (no error). Mirrored resources are prefixed with the source
+      # alias (kafka-cluster-1.<topic>, kafka-cluster-1.<group>). Extend the
+      # lists when adding new topics/groups. MM2's internal topics
+      # (mm2-configs/-offsets/-status) live on the TARGET cluster and are
+      # unaffected; if you enable the heartbeat connector below, add
+      # `heartbeats` to topicsPattern (its topic is created on the source).
+      topicsPattern: "topic-A|topic-B|topic-C"
+      groupsPattern: ".*(camel-consumer|kafka-user-[abc]-group|bridge-consumer-group|demo-consumer-group|isolation-demo-group)"
       # (Optional) offset translation for failback/failover — checkpoints
       # consumer-group offsets from the source to the target (Red Hat 3.2 guide,
       # 10.9.4 — sync.group.offsets.enabled applies the offsets to the target):

@@ -1,0 +1,97 @@
+# deploy/ossm/02-bridge-auth.yaml — Step 7.8 (docs/07-http-bridge.md)
+# OPTIONAL — OIDC enforcement on the bridge's HTTP API via OSSM/Istio, applied
+# once the bridge namespace has joined the mesh (istio-injection label).
+#
+# Apply with envsubst (the Issuer in Keycloak-issued JWTs is the realm's
+# externally reachable route URL — see <KEYCLOAK_HOST> in deploy/README.md):
+#
+#   KEYCLOAK_HOST="keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}"
+#   envsubst < deploy/ossm/02-bridge-auth.yaml | oc apply -f -
+#
+# Three resources:
+# 1. NetworkPolicy (kafka-auth): istiod (istio-system) must reach Keycloak's
+#    in-cluster http port 8080 — istiod fetches the realm JWKS itself for the
+#    RequestAuthentication rule, and the existing keycloak-allow-http-oauth
+#    policy only opens 8080 for the Kafka-related namespaces. NetworkPolicy
+#    rules are additive, so this extends without touching the existing policy.
+# 2. RequestAuthentication (kafka-http-bridge): the sidecar validates the
+#    `Authorization: Bearer` JWT against the kafka-auth realm. The `issuer`
+#    must EXACTLY match the token's `iss` claim — the Keycloak operator sets
+#    frontendUrl to the route hostname, so tokens carry
+#    https://<KEYCLOAK_HOST>/realms/kafka (verify with `jq -r .iss` on a
+#    decoded token). The jwksUri uses the in-cluster http Service (the same
+#    OAuth chain path the brokers and bridge use — DEV only, see
+#    deploy/keycloak/05-keycloak-http.yaml).
+# 3. AuthorizationPolicy (kafka-http-bridge): makes a valid token MANDATORY —
+#    RequestAuthentication alone only rejects INVALID tokens, it passes
+#    requests through with no token. Tokens must additionally come from an
+#    allowlisted client (azp claim — kafka-console, the demo realm's
+#    direct-access-grants client; extend as HTTP clients onboard).
+#    Management endpoints (/ready, /healthy, /metrics) stay open so the
+#    Cluster Operator probes and the user-workload monitoring scrape
+#    ([Step 1.2](../docs/01-user-workload-monitoring.md)) keep working.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-allow-http-istiod
+  namespace: kafka-auth
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: my-bridge-jwt
+  namespace: kafka-http-bridge
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/cluster: my-bridge
+      strimzi.io/kind: KafkaBridge
+  jwtRules:
+    - issuer: https://${KEYCLOAK_HOST}/realms/kafka
+      jwksUri: http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/certs
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: my-bridge-oidc
+  namespace: kafka-http-bridge
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/cluster: my-bridge
+      strimzi.io/kind: KafkaBridge
+  action: ALLOW
+  rules:
+    # 1. Management endpoints stay unauthenticated (probes + metrics scrape)
+    - to:
+        - operation:
+            paths: ["/ready", "/healthy", "/metrics"]
+    # 2. Everything else requires a token from the kafka-auth realm issued to
+    #    an ALLOWLISTED client (azp). Deliberately coarse — this edge policy
+    #    does NOT mirror the Kafka ACLs (deploy/proxy/06-kafka-acl.yaml):
+    #    per-topic/per-group operation enforcement lives in the proxy's
+    #    Authorization filter, keyed by Kafka principal — and every HTTP client
+    #    carries the bridge's single principal downstream. Real per-principal
+    #    enforcement therefore needs the per-tenant bridge topology
+    #    ([7.6](../docs/07-http-bridge.md) Pattern A). Extend the azp list as
+    #    HTTP clients onboard (one entry per client that may call the bridge).
+    - when:
+        - key: request.auth.claims[iss]
+          values: ["https://${KEYCLOAK_HOST}/realms/kafka"]
+        - key: request.auth.claims[azp]
+          values: ["kafka-console"]

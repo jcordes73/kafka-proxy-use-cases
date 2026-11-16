@@ -1,0 +1,134 @@
+# deploy/loadtest/04-bridge-consume-load.yaml — Step 15.3 (docs/15-load-testing.md)
+# Bridge-channel CONSUMER load test: the structural ceiling of the bridge
+# (4,000 TPS target). Consumer state is in-memory per bridge instance with no
+# failover (7.4) — run this against a SINGLE bridge replica: the number it
+# produces is the per-instance consumer capacity that scaling does NOT spread.
+#
+# The script creates one bridge consumer instance in the load group, then
+# polls in a loop (the bridge's long-poll GET, 1 s server-side timeout),
+# counts records and commits the high-water offset per partition. Consumption
+# is throughput-shaped, not rate-paced: the poll loop drains as fast as the
+# bridge serves, so the report number is the measured maximum.
+#
+# One consumer instance = one k6 VU (concurrent polls on the same instance are
+# not meaningful); scale = more consumer instances/groups, not more VUs.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-consume-script
+  namespace: api-gateway
+  labels:
+    app: kafka-loadtest
+data:
+  consume.js: |
+    import http from 'k6/http';
+    import { Counter } from 'k6/metrics';
+
+    const BASE = __ENV.BRIDGE_URL || 'http://my-bridge-bridge-service.kafka-http-bridge.svc.cluster.local:8080';
+    const TOPIC = __ENV.TOPIC || 'topic-A';
+    const GROUP = __ENV.CONSUMER_GROUP || 'loadtest-consumer-group';
+    const INSTANCE = 'loadtest-i1';
+    const DURATION = __ENV.DURATION || '10m';
+    const CT = { headers: { 'Content-Type': 'application/vnd.kafka.v2+json' } };
+
+    const consumed = new Counter('bridge_records_consumed');
+    const polls = new Counter('bridge_polls');
+
+    export const options = {
+      scenarios: {
+        consume: {
+          executor: 'constant-vus',
+          vus: 1,
+          duration: DURATION,
+        },
+      },
+      thresholds: {
+        http_req_failed: ['rate<0.01'],
+      },
+    };
+
+    export function setup() {
+      const create = http.post(
+        `${BASE}/consumers/${GROUP}`,
+        JSON.stringify({ name: INSTANCE, format: 'json', 'auto.offset.reset': 'earliest', 'enable.auto.commit': false }),
+        CT,
+      );
+      // 409 = the consumer instance already exists from a previous run — reuse it
+      if (create.status !== 200 && create.status !== 409) {
+        throw new Error(`consumer create failed: ${create.status} ${create.body}`);
+      }
+      http.post(`${BASE}/consumers/${GROUP}/instances/${INSTANCE}/subscription`, JSON.stringify({ topics: [TOPIC] }), CT);
+    }
+
+    export default function () {
+      const res = http.get(`${BASE}/consumers/${GROUP}/instances/${INSTANCE}/records?timeout=1000&max_bytes=52428800`);
+      polls.add(1);
+      if (res.status !== 200) return;   // 404 = instance gone (bridge restart) — recreate manually
+      const batch = res.json();
+      if (!batch.length) return;
+      consumed.add(batch.length);
+      // commit the highest offset seen per partition
+      const highWater = {};
+      for (const r of batch) {
+        highWater[r.partition] = Math.max(highWater[r.partition] ?? -1, r.offset);
+      }
+      const offsets = Object.entries(highWater).map(([p, o]) => ({ topic: TOPIC, partition: Number(p), offset: o + 1 }));
+      http.post(`${BASE}/consumers/${GROUP}/instances/${INSTANCE}/offsets`, JSON.stringify({ offsets: offsets }), CT);
+    }
+
+    export function teardown() {
+      http.del(`${BASE}/consumers/${GROUP}/instances/${INSTANCE}`);
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bridge-consume-load
+  namespace: api-gateway
+  labels:
+    app: kafka-loadtest
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: kafka-loadtest
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+      containers:
+        - name: k6
+          image: docker.io/grafana/k6:latest
+          command: ["k6", "run", "/scripts/consume.js"]
+          env:
+            - name: DURATION
+              value: "10m"
+            - name: TOPIC
+              value: topic-A
+            - name: CONSUMER_GROUP
+              value: loadtest-consumer-group
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: bridge-consume-script

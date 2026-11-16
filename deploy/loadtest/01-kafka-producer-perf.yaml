@@ -1,0 +1,111 @@
+# deploy/loadtest/01-kafka-producer-perf.yaml — Step 15.2 (docs/15-load-testing.md)
+# Kafka-channel producer load test through the proxy: the perf tool ships in the
+# Strimzi Kafka image the docs already use for CLI pods (§6.10, Demo 5 — no new
+# tooling). Closed-loop pacing (--throughput) with fixed-size records, so the
+# run reports achieved rate + latency instead of "as fast as possible".
+#
+# Defaults follow the 4,000 TPS × 1 KiB × 10 min steady state =
+# 1,200,000 records). Override per run with `oc set env job/...` or a patched
+# copy: BOOTSTRAP, TOPIC, NUM_RECORDS, RECORD_SIZE, TARGET_TPS.
+#
+# Default route is the kafka-cluster-2 VIRTUAL cluster bootstrap, not
+# kafka-cluster-1's: the base deploy wires the record-validation filter
+# (Demo 2) into cluster-1's virtual cluster, and the perf tool's synthetic
+# payloads are not schema-valid — they would be rejected. cluster-2's virtual
+# cluster carries only sasl-inspection + authorization (Step 6.5).
+#
+# Prerequisites (both verified live in §6.10 / Demo 5):
+#   - Secret `loadtest-oauth` in kafka-proxy (create per Step 15.2 — the realm
+#     import does not create Kubernetes Secrets)
+#   - ConfigMap `proxy-ca` in kafka-proxy (the proxy-tls Secret is self-signed,
+#     its own CA; the wildcard SAN covers both virtual clusters' bootstraps)
+# The client authenticates as `kafka-user-a` (password grant via the
+# `kafka-console` client — the verified Demo 5 pattern): the demo ACLs grant it
+# WRITE + DESCRIBE on topic-A.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-producer-perf
+  namespace: kafka-proxy
+  labels:
+    app: kafka-loadtest
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: kafka-loadtest
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+      containers:
+        - name: producer-perf
+          image: quay.io/strimzi/kafka:latest-kafka-4.2.2
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              set -euo pipefail
+              [ -f /opt/proxy-ca/ca.crt ] || { echo "FAIL: proxy-ca ConfigMap not mounted — create it first (docs/15, Step 15.2 prerequisites)"; exit 1; }
+              cat > /tmp/client.properties <<EOF
+              security.protocol=SASL_SSL
+              sasl.mechanism=OAUTHBEARER
+              sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required oauth.token.endpoint.uri="http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token" oauth.client.id="kafka-console" oauth.client.secret="kafka-console-secret" oauth.password.grant.username="${OAUTH_USER}" oauth.password.grant.password="${OAUTH_PASS}";
+              sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
+              ssl.truststore.type=PEM
+              ssl.truststore.location=/opt/proxy-ca/ca.crt
+              EOF
+              echo "Load: ${NUM_RECORDS} x ${RECORD_SIZE}B at target ${TARGET_TPS} rec/s -> ${BOOTSTRAP} topic=${TOPIC}"
+              bin/kafka-producer-perf-test.sh \
+                --topic "${TOPIC}" \
+                --num-records "${NUM_RECORDS}" \
+                --record-size "${RECORD_SIZE}" \
+                --throughput "${TARGET_TPS}" \
+                --producer.config /tmp/client.properties \
+                --producer-props "bootstrap.servers=${BOOTSTRAP}" \
+                --show-detailed-stats
+          env:
+            - name: BOOTSTRAP
+              value: kafka-cluster-2-cluster-ip-2-bootstrap.kafka-proxy.svc.cluster.local:9292
+            - name: TOPIC
+              value: topic-A
+            - name: NUM_RECORDS
+              value: "1200000"          # 4000 rec/s x 300 s
+            - name: RECORD_SIZE
+              value: "1024"
+            - name: TARGET_TPS
+              value: "4000"
+            - name: OAUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-oauth
+                  key: username
+            - name: OAUTH_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-oauth
+                  key: password
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          volumeMounts:
+            - name: proxy-ca
+              mountPath: /opt/proxy-ca
+              readOnly: true
+      volumes:
+        - name: proxy-ca
+          configMap:
+            name: proxy-ca

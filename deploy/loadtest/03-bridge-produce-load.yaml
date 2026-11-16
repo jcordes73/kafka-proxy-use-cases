@@ -1,0 +1,120 @@
+# deploy/loadtest/03-bridge-produce-load.yaml — Step 15.3 (docs/15-load-testing.md)
+# Bridge-channel PRODUCER load test: k6 drives an open-loop, constant-arrival
+# POST rate against the bridge's produce endpoint (the bridge's REST API has no
+# authentication of its own — the run comes from the api-gateway namespace,
+# which the bridge DMZ NetworkPolicy (7.5) already allows).
+#
+# The bridge is a Kafka client of the kafka-cluster-1 virtual cluster, so the
+# record-validation filter (Demo 2) applies to topic-A: the script produces
+# schema-valid records ({"orderId": ..., "amount": <number>}, Demo 5's payload
+# shape) — synthetic garbage would be rejected and the run would measure the
+# filter's reject path instead.
+#
+# Records-per-request batching: TARGET_TPS is the POST rate; with
+# RECORDS_PER_REQUEST=N the produced rate is rate x N. Keep requests small
+# enough to stay in one HTTP round trip per scenario step.
+#
+# The thresholds make the JOB fail when the SLO breaks (visible in
+# `oc get job`) — adjust p(95) to the workload's latency budget.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-produce-script
+  namespace: api-gateway
+  labels:
+    app: kafka-loadtest
+data:
+  produce.js: |
+    import http from 'k6/http';
+    import { Counter } from 'k6/metrics';
+
+    const BASE = __ENV.BRIDGE_URL || 'http://my-bridge-bridge-service.kafka-http-bridge.svc.cluster.local:8080';
+    const TOPIC = __ENV.TOPIC || 'topic-A';
+    const RATE = Number(__ENV.TARGET_TPS || 100);            // POST rate (requests/s)
+    const BATCH = Number(__ENV.RECORDS_PER_REQUEST || 1);    // records per POST
+    const DURATION = __ENV.DURATION || '10m';
+
+    const produced = new Counter('bridge_records_produced');
+
+    export const options = {
+      scenarios: {
+        produce: {
+          executor: 'constant-arrival-rate',   // open loop: pace is fixed, latency is measured, not self-inflicted
+          rate: RATE,
+          timeUnit: '1s',
+          duration: DURATION,
+          preAllocatedVUs: Math.max(20, Math.ceil(RATE / 50)),
+          maxVUs: Math.max(RATE * 2, 100),
+        },
+      },
+      thresholds: {
+        http_req_failed: ['rate<0.01'],
+        http_req_duration: ['p(95)<100'],
+      },
+    };
+
+    export default function () {
+      const records = [];
+      for (let i = 0; i < BATCH; i++) {
+        records.push({ value: { orderId: `load-vu${__VU}-it${__ITER}`, amount: 42 } });
+      }
+      const res = http.post(`${BASE}/topics/${TOPIC}`, JSON.stringify({ records: records }), {
+        headers: { 'Content-Type': 'application/vnd.kafka.json.v2+json' },
+      });
+      produced.add(res.status === 200 ? BATCH : 0);
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bridge-produce-load
+  namespace: api-gateway
+  labels:
+    app: kafka-loadtest
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: kafka-loadtest
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+      containers:
+        - name: k6
+          image: docker.io/grafana/k6:latest
+          command: ["k6", "run", "/scripts/produce.js"]
+          env:
+            - name: TARGET_TPS
+              value: "4000"
+            - name: RECORDS_PER_REQUEST
+              value: "1"
+            - name: DURATION
+              value: "10m"
+            - name: TOPIC
+              value: topic-A
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: bridge-produce-script

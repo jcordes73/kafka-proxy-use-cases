@@ -182,6 +182,16 @@ oc -n kafka-http-bridge create secret generic proxy-ca --from-file=ca.crt=/tmp/p
 oc apply -f deploy/bridge/
 oc -n kafka-http-bridge wait --for=condition=Ready kafkabridge/my-bridge --timeout=600s
 
+# OPTIONAL Deploy order 7b — OSSM OIDC front door for the bridge (Step 7.8,
+# cluster-admin). Separate directory on purpose: `oc apply -f deploy/bridge/`
+# must NOT pick up the optional mesh install.
+oc apply -f deploy/ossm/01-install.yaml
+oc get istio default -n istio-system        # wait for State: Healthy
+oc label namespace kafka-http-bridge istio-discovery=enabled istio-injection=enabled
+oc -n kafka-http-bridge rollout restart deployment/my-bridge-bridge
+KEYCLOAK_HOST="keycloak-ingress-kafka-auth.${OPENSHIFT_APPS_DOMAIN}"
+envsubst < deploy/ossm/02-bridge-auth.yaml | oc apply -f -
+
 # Deploy order 8 — Console (Step 8): operator InstallPlan, then the CR and its TLS material.
 oc apply -f deploy/console/01-console-operator.yaml
 oc -n kafka-console wait --for=create installplan --all --timeout=300s
@@ -285,6 +295,8 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/proxy/00-proxy-operator-olm.yaml` | `openshift-operators` (operator) |
 | `deploy/bridge/01-kafka-bridge.yaml` | `kafka-http-bridge` |
 | `deploy/bridge/02-bridge-netpol-dmz.yaml` | `api-gateway` (stand-in for the DMZ verification) |
+| `deploy/ossm/01-install.yaml` | `istio-system` (labeled `istio-discovery=enabled`), `istio-cni` (operator in `openshift-operators`) — optional, [Step 7.8](../docs/07-http-bridge.md#78--securing-the-bridge-with-openshift-service-mesh-ossm) |
+| `deploy/ossm/02-bridge-auth.yaml` | `kafka-http-bridge` (+ additive NetworkPolicy in `kafka-auth` for istiod's JWKS fetch) — optional, [Step 7.8](../docs/07-http-bridge.md#78--securing-the-bridge-with-openshift-service-mesh-ossm) |
 | `deploy/mirrormaker2/00-namespace.yaml` | `kafka-mm2` |
 | `deploy/mirrormaker2/01-mirrormaker2.yaml` | (the KafkaMirrorMaker2 for the `kafka-mm2` namespace created above) |
 | `deploy/console/01-console-operator.yaml` | `kafka-console` |
@@ -306,11 +318,13 @@ its own `Namespace`, so applying a component's directory is self-contained:
 | `deploy/apicurio/01–04` | Red Hat build of Apicurio Registry 3 (operator subscription, persistent PostgreSQL, `ApicurioRegistry3`, DMZ netpols) + schema registration | [5.1–5.4](../docs/05-apicurio-registry.md) |
 | `deploy/proxy/` | KafkaProxy, ingress, KafkaService, VirtualKafkaCluster (kafka-proxy namespace) | [6](../docs/06-proxy.md) |
 | `deploy/bridge/` | Kafka HTTP Bridge (DMZ client) + DMZ NetworkPolicies (kafka-http-bridge); connects through the proxy | [7](../docs/07-http-bridge.md) |
+| `deploy/ossm/` | OPTIONAL: OpenShift Service Mesh 3 (operator, `Istio`/`IstioCNI`) + OIDC enforcement on the bridge HTTP API (`RequestAuthentication`/`AuthorizationPolicy`, istiod JWKS netpol) | [7.8](../docs/07-http-bridge.md#78--securing-the-bridge-with-openshift-service-mesh-ossm) |
 | `deploy/console/` | Streams for Apache Kafka Console (kafka-console): operator OLM subscription (`amq-streams-console`), `Console` CR with OIDC, metrics Services + ServiceMonitors | [8](../docs/08-console.md) |
 | `deploy/camel/producer`, `deploy/camel/consumer` | Camel Quarkus client projects (source + image build + Deployment) | [9](../docs/09-camel-clients.md) |
 | `deploy/observability/01–05` | Per-component monitoring integration: metrics netpols, broker/proxy/bridge PodMonitors, alerts | [1.2–1.9](../docs/01-user-workload-monitoring.md) |
 | `deploy/observability/06–07-perses*.yaml` + `09-perses-strimzi-dashboards.yaml` + `10-perses-proxy-dashboard.yaml` + `11-keycloak-podmonitor.yaml` + `12-perses-keycloak-dashboards.yaml` | Perses console dashboards (optional, Tech Preview): COO subscription + monitoring `UIPlugin`, `PersesDatasource` (UWM Thanos Querier) + `cluster-monitoring-view` RBAC, the full Strimzi Grafana dashboard set translated to `PersesDashboard`s, the Kafka Proxy dashboard, and the Keycloak dashboards (kafka project) | [1.10](../docs/01-user-workload-monitoring.md#110--perses-dashboards-in-the-console-optional-technology-preview) |
 | `deploy/demos/` | Demo manifests (Step 10, optional): **Record Validation demo** (Demo 2 — topic + filter wiring, `02-record-validation-demo.yaml`; its filter deploys with the proxy), proxy filters (authorization, entity isolation), multi-tenant virtual clusters, MM2 failover variant, Record Encryption with a dev Vault | [10](../docs/10-demos.md) |
+| `deploy/loadtest/` | OPTIONAL load-test Jobs ([15](../docs/15-load-testing.md)): Kafka producer/consumer perf tests through the proxy (`kafka-proxy` namespace) and k6 bridge produce/consume scenarios (`api-gateway`) | [15](../docs/15-load-testing.md) |
 
 ## Templating: `OPENSHIFT_APPS_DOMAIN`
 
