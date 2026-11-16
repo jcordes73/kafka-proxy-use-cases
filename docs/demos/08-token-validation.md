@@ -9,18 +9,18 @@ The demo client authenticates with a short-lived JWT from the `kafka` realm (the
 1. The allow path: a valid demo-client token authenticates and produces normally — the broker validates it against Keycloak's JWKS as part of the SASL exchange.
 2. The deny path: forge a token signed with a different key, tamper with one, or use an expired/foreign-issuer token — the **broker** rejects it with a SASL error (e.g. `SASL failed : {"status":"invalid_token"}`) before any produce happens. Run a Kafka CLI pod with the bad token to see it:
 
-   ```bash
-   # TAMPERED_TOKEN: a JWT with a modified payload (signature no longer matches)
-   oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-proxy -- \
-     bash -c 'cat > /tmp/client.properties <<EOF
+```bash
+# TAMPERED_TOKEN: a JWT with a modified payload (signature no longer matches)
+oc run kafka-cli --rm -i --restart=Never --image=quay.io/strimzi/kafka:latest-kafka-4.2.2 -n kafka-proxy -- \
+  bash -c 'cat > /tmp/client.properties <<EOF
 security.protocol=SASL_PLAINTEXT
 sasl.mechanism=OAUTHBEARER
 sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
   oauth.accessToken="$TAMPERED_TOKEN";
 sasl.oauthbearer.token.endpoint.url=http://keycloak-http.kafka-auth.svc.cluster.local:8080/realms/kafka/protocol/openid-connect/token
 EOF
-     echo "tampered" | kafka-console-producer.sh --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 --producer.config /tmp/client.properties --topic topic-A'
-   ```
+  echo "tampered" | kafka-console-producer.sh --bootstrap-server kafka-cluster-1-cluster-ip-1-bootstrap.kafka-proxy.svc.cluster.local:9292 --producer.config /tmp/client.properties --topic topic-A'
+```
 
 3. Revert (only if demo manifests were applied): `oc apply -f deploy/proxy/05-virtualkafkacluster.yaml`
 
