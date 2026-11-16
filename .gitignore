@@ -3,3 +3,6 @@ deploy/camel/*/target/
 
 # pandoc mermaid-filter build leftover
 mermaid-filter.err
+
+# generated guide PDF (rebuild with make-guide-pdf.sh)
+kafka-proxy-guide.pdf
